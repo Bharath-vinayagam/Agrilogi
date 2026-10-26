@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/services/supabase";
+import { syncPricingConfig } from "@/services/pricingConfig";
 import { Languages, Headphones, Route, Truck } from "lucide-react";
 import Link from "next/link";
 
@@ -11,6 +12,9 @@ export default function LandingPage() {
   const router = useRouter();
 
   useEffect(() => {
+    // Synchronize latest pricing configuration from backend
+    syncPricingConfig();
+
     async function checkUser() {
       let session: any = null;
       if (typeof window !== "undefined") {

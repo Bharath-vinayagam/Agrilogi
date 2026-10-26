@@ -13,7 +13,7 @@ if BaseSettings:
         frontend_origin: str = "http://localhost:3000"
         supabase_url: str = ""
         supabase_service_role_key: str = ""
-        gemini_api_key: str = ""
+        groq_api_key: str = ""
         twilio_account_sid: str = ""
         twilio_auth_token: str = ""
         twilio_phone_number: str = ""
@@ -27,7 +27,7 @@ else:
         frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
         supabase_url = os.getenv("SUPABASE_URL", "")
         supabase_service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-        gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        groq_api_key = os.getenv("GROQ_API_KEY", "")
         twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
         twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
         twilio_phone_number = os.getenv("TWILIO_PHONE_NUMBER", "")

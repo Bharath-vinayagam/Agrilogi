@@ -46,9 +46,17 @@ export function TacticalMap({ orders }: { orders: FarmerOrder[] }) {
       );
     }
 
-    // Only plot orders with real GPS coordinates
-    const geoOrders = orders.filter(o => o.lat && o.lng);
-    const noGeoOrders = orders.filter(o => !o.lat || !o.lng);
+    // Only plot orders with real GPS coordinates (parse numbers safely)
+    const geoOrders = orders
+      .map(o => ({
+        ...o,
+        lat: o.lat != null ? Number(o.lat) : undefined,
+        lng: o.lng != null ? Number(o.lng) : undefined,
+        resolvedClusterId: o.clusterId || (o as any).cluster_id || "unassigned",
+      }))
+      .filter(o => typeof o.lat === "number" && !isNaN(o.lat) && typeof o.lng === "number" && !isNaN(o.lng));
+
+    const noGeoOrders = orders.filter(o => o.lat == null || o.lng == null || isNaN(Number(o.lat)) || isNaN(Number(o.lng)));
 
     if (geoOrders.length === 0) {
       return (
@@ -75,7 +83,7 @@ export function TacticalMap({ orders }: { orders: FarmerOrder[] }) {
     };
 
     // Assign colour per cluster_id
-    const clusterIds = Array.from(new Set(geoOrders.map(o => o.clusterId || "unassigned")));
+    const clusterIds = Array.from(new Set(geoOrders.map(o => o.resolvedClusterId)));
     const clusterColorMap: Record<string, string> = {};
     clusterIds.forEach((cid, i) => {
       clusterColorMap[cid] = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
@@ -86,13 +94,15 @@ export function TacticalMap({ orders }: { orders: FarmerOrder[] }) {
       ...projectToSVG(o.lat as number, o.lng as number, bounds),
       label: o.village?.split(",")[0] || "?",
       farmer: o.farmerName,
-      clusterId: o.clusterId || "unassigned",
-      color: clusterColorMap[o.clusterId || "unassigned"],
+      clusterId: o.resolvedClusterId,
+      color: clusterColorMap[o.resolvedClusterId],
     }));
 
-    // Destination midpoint (average of all farmer points — proxy for "truck heading out")
-    const destX = farmerPoints.reduce((s, p) => s + p.x, 0) / farmerPoints.length + 80;
-    const destY = farmerPoints.reduce((s, p) => s + p.y, 0) / farmerPoints.length - 30;
+    // Destination midpoint (average of all farmer points — proxy for "truck heading out"), clamped to SVG bounds
+    const avgX = farmerPoints.reduce((s, p) => s + p.x, 0) / farmerPoints.length;
+    const avgY = farmerPoints.reduce((s, p) => s + p.y, 0) / farmerPoints.length;
+    const destX = Math.max(35, Math.min(355, avgX + 60));
+    const destY = Math.max(35, Math.min(205, avgY - 20));
     const destinations = Array.from(new Set(geoOrders.map(o => o.destination || "Market")));
     const destLabel = destinations.length === 1 ? destinations[0].split(",")[0] : `${destinations.length} Markets`;
 

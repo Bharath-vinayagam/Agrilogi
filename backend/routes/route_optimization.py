@@ -29,6 +29,7 @@ from services.tomtom_service import (
 from services.route_optimizer import (
     optimize_route,
     baseline_route,
+    individual_trips_baseline,
     CapacityViolationError,
     RoutingError,
 )
@@ -37,16 +38,7 @@ router = APIRouter(prefix="/api/route-optimization", tags=["Route Optimization"]
 
 TRUCK_CAPACITY_KG = 1100.0  # Standard cooperative truck
 
-# Known mandi coordinates for accurate routing
-MANDI_COORDS = {
-    "koyambedu mandi":          {"lat": 13.0716, "lng": 80.1945, "name": "Koyambedu Mandi, Chennai"},
-    "madurai mandi":             {"lat": 9.9252,  "lng": 78.1198, "name": "Madurai Mandi"},
-    "coimbatore mandi":          {"lat": 11.0168, "lng": 76.9558, "name": "Coimbatore Mandi"},
-    "salem mandi":               {"lat": 11.6643, "lng": 78.1460, "name": "Salem Mandi"},
-    "trichy mandi":              {"lat": 10.7905, "lng": 78.7047, "name": "Trichy Mandi"},
-    "vellore mandi":             {"lat": 12.9165, "lng": 79.1325, "name": "Vellore Mandi"},
-    "delhi mandi":               {"lat": 28.7196, "lng": 77.1724, "name": "Azadpur Mandi, Delhi"},
-}
+from services.mandi_config import MANDI_COORDS
 
 
 def _resolve_mandi(destination: str, cluster_id: str, farmers: list) -> dict:
@@ -128,7 +120,8 @@ def _run_pipeline(farmers: list, mandi: dict, vehicle: dict) -> dict:
     delay_matrix    = tt_matrix["traffic_delays"]
 
     opt_result  = optimize_route(farmers, mandi, vehicle, duration_matrix, distance_matrix)
-    base_result = baseline_route(farmers, mandi, duration_matrix, distance_matrix)
+    base_result = individual_trips_baseline(farmers, duration_matrix, distance_matrix)
+    seq_result  = baseline_route(farmers, mandi, duration_matrix, distance_matrix)
 
     ordered_locations = [
         {"latitude": step["latitude"], "longitude": step["longitude"]}
@@ -156,6 +149,8 @@ def _run_pipeline(farmers: list, mandi: dict, vehicle: dict) -> dict:
     opt_dur_min  = opt_result["total_duration_s"] / 60
     base_dist_km = base_result["total_distance_m"] / 1000
     base_dur_min = base_result["total_duration_s"] / 60
+    seq_dist_km  = seq_result["total_distance_m"] / 1000
+    seq_dur_min  = seq_result["total_duration_s"] / 60
 
     def pct_saving(base, opt):
         return 0.0 if base == 0 else round((base - opt) / base * 100, 2)
@@ -171,13 +166,16 @@ def _run_pipeline(farmers: list, mandi: dict, vehicle: dict) -> dict:
         "route":                      opt_result["route"],
         "geometry":                   geometry_result["geometry"],
         "comparison": {
-            "label":                      "Original Order vs Optimized Order",
+            "label":                      "Individual Trips vs Consolidated Optimized Route",
             "original_distance_km":       round(base_dist_km, 3),
             "optimized_distance_km":      round(opt_dist_km, 3),
             "distance_saving_percent":    pct_saving(base_dist_km, opt_dist_km),
             "original_duration_minutes":  round(base_dur_min, 2),
             "optimized_duration_minutes": round(opt_dur_min, 2),
             "time_saving_percent":        pct_saving(base_dur_min, opt_dur_min),
+            "sequential_distance_km":     round(seq_dist_km, 3),
+            "sequential_duration_minutes": round(seq_dur_min, 2),
+            "sequence_saving_percent":    pct_saving(seq_dist_km, opt_dist_km),
         },
     }
 
@@ -228,6 +226,17 @@ def optimize_cluster(cluster_id: str, vehicle_capacity_kg: float = TRUCK_CAPACIT
     try:
         result = _run_pipeline(farmers, mandi, vehicle)
         result["cluster_id"] = cluster_id
+
+        # Save route_leg_km per order after optimization
+        for step in result.get("route", []):
+            if step.get("type") == "farmer" and "leg_km" in step:
+                try:
+                    supabase_client.table("orders").update({
+                        "route_leg_km": step["leg_km"]
+                    }).eq("id", step["id"]).execute()
+                except Exception as e:
+                    print(f"Error updating route_leg_km for order {step['id']}: {e}")
+
         return result
     except CapacityViolationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

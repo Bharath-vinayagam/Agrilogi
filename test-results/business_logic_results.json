@@ -1,0 +1,165 @@
+{
+  "timestamp": "2026-10-15T22:35:36.200395",
+  "summary": {
+    "total": 17,
+    "passed": 15,
+    "failed": 2,
+    "partial": 0,
+    "pass_rate": 88.2
+  },
+  "tests": [
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 100kg",
+      "expected": "mini (500kg)",
+      "actual": "mini (500kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 500kg",
+      "expected": "mini (500kg)",
+      "actual": "mini (500kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 501kg",
+      "expected": "standard (1100kg)",
+      "actual": "standard (1100kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 1100kg",
+      "expected": "standard (1100kg)",
+      "actual": "standard (1100kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 1101kg",
+      "expected": "heavy (2500kg)",
+      "actual": "heavy (2500kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Vehicle class for 2500kg",
+      "expected": "heavy (2500kg)",
+      "actual": "heavy (2500kg)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.189245"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Individual cost 350kg Athur\u2192Koyambedu",
+      "expected": "1000-1500",
+      "actual": 2155,
+      "status": "FAIL",
+      "details": "\u20b92155",
+      "timestamp": "2026-10-15T22:35:36.197834"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Zero weight cost",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Negative weight cost",
+      "expected": 0,
+      "actual": 0,
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Fallback pricing 400kg",
+      "expected": 3600,
+      "actual": 3600,
+      "status": "PASS",
+      "details": "\u20b93600",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Pricing",
+      "test_name": "Minimum rate floor 50kg",
+      "expected": "\u2265150",
+      "actual": 177,
+      "status": "PASS",
+      "details": "\u20b9177",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Coordinates for Koyambedu Mandi",
+      "expected": "Valid coords",
+      "actual": "(13.0716, 80.1945)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Coordinates for Koyambedu",
+      "expected": "Valid coords",
+      "actual": "(13.0716, 80.1945)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Coordinates for Tiruvallur",
+      "expected": "Valid coords",
+      "actual": "None",
+      "status": "FAIL",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Coordinates for Salem",
+      "expected": "Valid coords",
+      "actual": "(11.6643, 78.146)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Coordinates for Coimbatore",
+      "expected": "Valid coords",
+      "actual": "(11.0168, 76.9558)",
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    },
+    {
+      "category": "Mandi Config",
+      "test_name": "Unknown mandi",
+      "expected": null,
+      "actual": null,
+      "status": "PASS",
+      "details": "",
+      "timestamp": "2026-10-15T22:35:36.199390"
+    }
+  ]
+}

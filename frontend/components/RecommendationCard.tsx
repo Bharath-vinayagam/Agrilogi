@@ -71,11 +71,12 @@ export function RecommendationCard({ recommendation, orders = [] }: Recommendati
 
   const compatibility = checkCropCompatibility();
 
-  // 2. Truck Utilization Math
-  const totalWeight = orders.reduce((sum, o) => sum + o.weightKg, 0);
-  // Truck Utilization — 1100kg standard cooperative truck (matches backend)
+  // 2. Truck Utilization — authoritative value from backend recommendation service
   const truckCapacity = 1100;
-  const utilizationPercent = Math.min(100, Math.round((totalWeight / truckCapacity) * 100));
+  const totalWeight = recommendation.totalWeightKg || orders.reduce((sum, o) => sum + o.weightKg, 0);
+  const utilizationPercent = typeof recommendation.truckUtilization === "number"
+    ? recommendation.truckUtilization
+    : Math.min(100, Math.round((totalWeight / truckCapacity) * 100));
 
   // 3. Route Efficiency Analytics Calculations
   const distanceSaved = Math.max(0, orders.length * 6);

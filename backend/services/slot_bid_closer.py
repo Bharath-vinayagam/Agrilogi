@@ -127,7 +127,13 @@ def close_slot_and_assign_winner(slot_date: str, slot_time: str) -> Dict:
         winning_bid = get_winning_bid(slot_date, slot_time)
         
         if not winning_bid:
-            result["message"] = f"No bids found for {slot_date} {slot_time} slot"
+            # When slot closes without bids, mark pending orders in this slot as Bidding Closed
+            supabase_client.table("orders").update({
+                "status": "Bidding Closed"
+            }).eq("pickup_date", slot_date).eq("pickup_slot", slot_time).in_("status", ["Pending", "Cluster Forming"]).execute()
+            
+            result["message"] = f"No bids found for {slot_date} {slot_time} slot. Marked orders as Bidding Closed."
+            result["success"] = True
             return result
         
         winner_id = winning_bid["id"]
@@ -184,7 +190,7 @@ def close_slot_and_assign_winner(slot_date: str, slot_time: str) -> Dict:
 
 def process_all_closable_slots() -> List[Dict]:
     """
-    Check all slots with open bids and close those that should be closed.
+    Check all slots with open bids or pending orders and close those that should be closed.
     Called periodically by scheduler.
     """
     if not supabase_client:
@@ -193,15 +199,21 @@ def process_all_closable_slots() -> List[Dict]:
     results = []
     
     try:
-        # Get all unique slot combinations with open bids
-        response = supabase_client.table("bids").select("pickup_date, pickup_slot").eq("bid_type", "slot").eq("status", "Open").execute()
+        # Get slots from open bids
+        bid_slots = supabase_client.table("bids").select("pickup_date, pickup_slot").eq("bid_type", "slot").eq("status", "Open").execute()
+        # Also get slots from open orders
+        order_slots = supabase_client.table("orders").select("pickup_date, pickup_slot").in_("status", ["Pending", "Cluster Forming"]).execute()
         
-        if not response.data:
+        all_slot_rows = (bid_slots.data or []) + (order_slots.data or [])
+        
+        if not all_slot_rows:
             return []
         
         # Get unique date/slot combinations
         slots = {}
-        for row in response.data:
+        for row in all_slot_rows:
+            if not row.get("pickup_date") or not row.get("pickup_slot"):
+                continue
             key = f"{row['pickup_date']}_{row['pickup_slot']}"
             if key not in slots:
                 slots[key] = {
@@ -236,6 +248,74 @@ def get_slot_closing_time(slot_date: str, slot_time: str) -> Optional[datetime]:
     return get_previous_slot_end_time(slot_date, slot_time)
 
 
+def close_order_and_assign_winner(order_id: str) -> Dict:
+    """
+    Close bidding for a specific order and assign the winning driver.
+    """
+    if not supabase_client:
+        return {"success": False, "error": "Database not configured"}
+    
+    try:
+        result = {
+            "success": False,
+            "order_id": order_id,
+            "winner": None,
+            "message": ""
+        }
+        
+        # Get order
+        order_resp = supabase_client.table("orders").select("*").eq("id", order_id).execute()
+        if not order_resp.data:
+            result["message"] = f"Order {order_id} not found"
+            return result
+        
+        order = order_resp.data[0]
+        
+        # Query open bids for this order, sorted by amount (lowest first)
+        bids_resp = supabase_client.table("bids").select("*").eq("order_id", order_id).eq("bid_type", "order").eq("status", "Open").order("amount", desc=False).execute()
+        
+        if not bids_resp.data or len(bids_resp.data) == 0:
+            # No bids placed before closing time
+            supabase_client.table("orders").update({
+                "status": "Bidding Closed"
+            }).eq("id", order_id).execute()
+            
+            result["message"] = f"No bids found for order {order_id}. Marked as Bidding Closed."
+            result["success"] = True
+            return result
+        
+        winning_bid = bids_resp.data[0]
+        winner_id = winning_bid["id"]
+        winner_name = winning_bid["driver_name"]
+        winner_amount = winning_bid["amount"]
+        
+        # 1. Update winning bid to Accepted
+        supabase_client.table("bids").update({"status": "Accepted"}).eq("id", winner_id).execute()
+        
+        # 2. Update other bids for this order to Rejected
+        supabase_client.table("bids").update({"status": "Rejected"}).eq("order_id", order_id).eq("bid_type", "order").neq("id", winner_id).execute()
+        
+        # 3. Update order status and assignment
+        supabase_client.table("orders").update({
+            "status": "Driver Assigned",
+            "assigned_driver": winner_name,
+            "final_cost": winner_amount
+        }).eq("id", order_id).execute()
+        
+        result["success"] = True
+        result["winner"] = {
+            "driver_name": winner_name,
+            "amount": winner_amount,
+            "bid_id": winner_id
+        }
+        result["message"] = f"Order {order_id} assigned to {winner_name} for ₹{winner_amount}."
+        return result
+        
+    except Exception as e:
+        print(f"Error closing order {order_id}: {e}")
+        return {"success": False, "error": str(e), "order_id": order_id}
+
+
 def process_all_closable_orders() -> List[Dict]:
     """
     Check all orders with open bids and close those whose slots have passed.
@@ -247,7 +327,7 @@ def process_all_closable_orders() -> List[Dict]:
     results = []
     
     try:
-        # Get all orders with open bids
+        # Get all orders that are still pending / cluster forming
         response = supabase_client.table("orders").select("*").in_("status", ["Pending", "Cluster Forming"]).execute()
         
         if not response.data:

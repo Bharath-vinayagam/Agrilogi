@@ -5,18 +5,18 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import type { FarmerOrder, SavingsPoint } from "@/types";
 import { TrendingDown, TrendingUp, Percent, IndianRupee } from "lucide-react";
 
-export function SavingsPanel({ 
-  orders, 
-  trend, 
-  selectedOrder: externalSelectedOrder 
-}: { 
-  orders: FarmerOrder[]; 
+export function SavingsPanel({
+  orders,
+  trend,
+  selectedOrder: externalSelectedOrder
+}: {
+  orders: FarmerOrder[];
   trend: SavingsPoint[];
   selectedOrder?: FarmerOrder | null;
 }) {
   // Use external selected order if provided
   const activeSelectedOrder = externalSelectedOrder ?? null;
-  
+
   // Calculate costs based on selected order or all orders
   const ordersToCalculate = activeSelectedOrder ? [activeSelectedOrder] : orders;
   const individual = ordersToCalculate.reduce((sum, order) => sum + order.individualCost, 0);
@@ -25,12 +25,12 @@ export function SavingsPanel({
   const savingsPercentage = individual > 0 ? ((savings / individual) * 100).toFixed(1) : "0.0";
 
   // Calculate per-farmer savings for farmer list
-  const farmerSavingsMap = new Map<string, { 
-    name: string; 
-    orders: number; 
-    individual: number; 
-    shared: number; 
-    savings: number; 
+  const farmerSavingsMap = new Map<string, {
+    name: string;
+    orders: number;
+    individual: number;
+    shared: number;
+    savings: number;
     percentage: number;
   }>();
 
@@ -81,7 +81,7 @@ export function SavingsPanel({
             <TrendingDown className="text-field" size={32} />
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 bg-black/20 rounded-lg p-3">
           <Percent className="text-harvest" size={20} />
           <span className="text-2xl font-bold text-harvest">{savingsPercentage}%</span>
@@ -101,7 +101,7 @@ export function SavingsPanel({
             <TrendingUp className="text-chilli/40" size={28} />
           </div>
         </div>
-        
+
         <div className="rounded-lg border-2 border-field/20 bg-field/5 p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -115,7 +115,7 @@ export function SavingsPanel({
       </div>
 
       {/* Savings Trend Chart */}
-      <div className="mb-5 rounded-lg border border-stone-200 bg-stone-50 p-4">
+      {/* <div className="mb-5 rounded-lg border border-stone-200 bg-stone-50 p-4">
         <h3 className="text-sm font-bold text-soil mb-3">📈 Savings Trend</h3>
         <div className="h-40">
           <ResponsiveContainer height="100%" width="100%">
@@ -130,24 +130,24 @@ export function SavingsPanel({
             </AreaChart>
           </ResponsiveContainer>
         </div>
-      </div>
+      </div> */}
 
       {/* Farmer-wise Savings List - Dark Cards */}
       <div className="border-t border-stone-200 pt-5">
         <h3 className="text-base font-bold text-soil mb-1">👨‍🌾 Farmer-wise Savings</h3>
         <p className="text-xs text-stone-500 mb-4">
-          {activeSelectedOrder 
-            ? "Savings breakdown for this order" 
+          {activeSelectedOrder
+            ? "Savings breakdown for this order"
             : `Showing ${farmerSavingsList.length} farmer${farmerSavingsList.length !== 1 ? 's' : ''}`}
         </p>
-        
+
         <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
           {farmerSavingsList.length === 0 ? (
             <p className="text-center text-sm text-stone-400 py-6 italic">No savings data available yet</p>
           ) : (
             farmerSavingsList.map((farmer, index) => (
-              <div 
-                key={`${farmer.name}_${index}`} 
+              <div
+                key={`${farmer.name}_${index}`}
                 className="rounded-lg bg-gradient-to-r from-stone-800 to-stone-700 p-4 text-white shadow-md hover:shadow-lg transition-all"
               >
                 <div className="flex items-center justify-between mb-2">
@@ -165,20 +165,20 @@ export function SavingsPanel({
                     <p className="text-[10px] text-stone-400">saved</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-3 text-[11px]">
                   <div className="flex items-center gap-1 bg-black/20 rounded px-2 py-1">
                     <Percent size={12} className="text-harvest" />
                     <span className="font-bold text-harvest">{farmer.percentage.toFixed(1)}%</span>
                   </div>
                   <div className="flex-1 h-2 bg-black/30 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-gradient-to-r from-harvest to-field transition-all"
                       style={{ width: `${Math.min(farmer.percentage, 100)}%` }}
                     />
                   </div>
                 </div>
-                
+
                 <div className="mt-2 flex justify-between text-[10px] text-stone-400">
                   <span>Individual: Rs {farmer.individual.toLocaleString("en-IN")}</span>
                   <span>Shared: Rs {farmer.shared.toLocaleString("en-IN")}</span>

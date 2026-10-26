@@ -25,6 +25,9 @@ export function AdminDashboard() {
     weightKg: 0,
     destination: ""
   });
+  const [closingOrderId, setClosingOrderId] = useState<string | null>(null);
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
   // Live Operations Timeline — starts empty, populated from real order events
   const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
@@ -110,11 +113,11 @@ export function AdminDashboard() {
   function handleStartEdit(order: any) {
     setEditingOrder(order);
     setEditForm({
-      farmerName: order.farmerName,
+      farmerName: order.farmerName || order.farmer_name,
       phone: order.phone,
       village: order.village,
       crop: order.crop,
-      weightKg: order.weightKg,
+      weightKg: order.weightKg || order.weight_kg,
       destination: order.destination || ""
     });
   }
@@ -132,6 +135,41 @@ export function AdminDashboard() {
     }
   }
 
+  async function handleCloseBidding(orderId: string) {
+    if (!confirm(`Close bidding for order ${orderId} and assign the lowest bidder?`)) return;
+    setClosingOrderId(orderId);
+    try {
+      // Check if this order belongs to a cluster
+      const order = orders.find((o: any) => o.id === orderId);
+      const clusterId = order?.clusterId || order?.cluster_id;
+
+      let res: Response;
+      if (clusterId) {
+        // Cluster bid — close at cluster level so the lowest cluster bid wins
+        res = await fetch(`${API_BASE}/api/bids/cluster/${clusterId}/close`, { method: "POST" });
+      } else {
+        // No cluster — fall back to order-level close
+        res = await fetch(`${API_BASE}/api/bids/order/close/${orderId}`, { method: "POST" });
+      }
+
+      const data = await res.json();
+      if (res.ok && (data.success || data.winner)) {
+        const winner = data.winner;
+        const msg = winner
+          ? `✅ Bidding closed. Winner: ${winner.driver_name} (₹${winner.amount})`
+          : `✅ ${data.message}`;
+        alert(msg);
+        await loadSnapshot();
+      } else {
+        alert(`❌ ${data.message || data.detail || "Failed to close bidding"}`);
+      }
+    } catch (err) {
+      alert("Failed to close bidding — check backend logs.");
+    } finally {
+      setClosingOrderId(null);
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-stone-500 py-10 text-center">Loading admin snapshot...</p>;
   }
@@ -142,8 +180,12 @@ export function AdminDashboard() {
 
   const { orders = [], bids = [], extraction, recommendation, savingsTrend } = snapshot;
 
-  const totalWeight = orders.reduce((sum: number, order: any) => sum + order.weightKg, 0);
-  const totalSavings = orders.reduce((sum: number, order: any) => sum + order.individualCost - order.sharedCost, 0);
+  const totalWeight = orders.reduce((sum: number, order: any) => sum + (order.weightKg || order.weight_kg || 0), 0);
+  const totalSavings = orders.reduce((sum: number, order: any) => {
+    const individual = order.individualCost || order.individual_cost || 0;
+    const shared = order.sharedCost || order.shared_cost || 0;
+    return sum + (individual - shared);
+  }, 0);
 
   // Low confidence manual review orders
   const reviewOrders = orders.filter((o: any) => o.reviewRequired);
@@ -318,11 +360,11 @@ export function AdminDashboard() {
                   <td className="py-3.5 px-3 font-semibold text-soil">{order.id}</td>
                   <td>
                     <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold rounded px-2.5 py-0.5 ${
-                      order.source === "Voice Call" 
+                      (order.source || order.source) === "Voice Call" 
                         ? "bg-river/10 text-river" 
                         : "bg-stone-100 text-stone-600"
                     }`}>
-                      {order.source === "Voice Call" ? (
+                      {(order.source || order.source) === "Voice Call" ? (
                         <>
                           <PhoneCall size={11} />
                           Voice ({order.language || "en"})
@@ -336,19 +378,19 @@ export function AdminDashboard() {
                     </span>
                   </td>
                   <td>
-                    <div className="font-semibold text-stone-850">{order.farmerName}</div>
+                    <div className="font-semibold text-stone-850">{order.farmerName || order.farmer_name}</div>
                     <div className="text-[11px] text-stone-500 font-medium">{order.phone}</div>
                   </td>
                   <td>{order.village}</td>
                   <td>{order.crop}</td>
-                  <td>{order.weightKg} kg</td>
+                  <td>{order.weightKg || order.weight_kg} kg</td>
                   <td>
                     <StatusPill status={order.status} />
                   </td>
                   <td>
-                    {order.source === "Voice Call" && order.confidence ? (
+                    {(order.source || order.source) === "Voice Call" && order.confidence ? (
                       <div className="flex flex-col gap-0.5">
-                        {order.reviewRequired ? (
+                        {(order.reviewRequired || order.review_required) ? (
                           <span className="text-[10px] font-extrabold text-chilli bg-chilli/10 px-1.5 py-0.5 rounded w-max">
                             Low Confidence
                           </span>
@@ -369,13 +411,24 @@ export function AdminDashboard() {
                     )}
                   </td>
                   <td>
-                    <button
-                      onClick={() => handleStartEdit(order)}
-                      className="focus-ring inline-flex items-center gap-1 text-xs font-bold text-soil border border-stone-200 bg-white px-3 py-1.5 rounded-lg hover:bg-stone-50 transition-all"
-                    >
-                      <Edit2 size={12} />
-                      Edit
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleStartEdit(order)}
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-bold text-soil border border-stone-200 bg-white px-3 py-1.5 rounded-lg hover:bg-stone-50 transition-all"
+                      >
+                        <Edit2 size={12} />
+                        Edit
+                      </button>
+                      {(order.status === "Pending" || order.status === "Cluster Forming") && (
+                        <button
+                          onClick={() => handleCloseBidding(order.id)}
+                          disabled={closingOrderId === order.id}
+                          className="focus-ring inline-flex items-center gap-1 text-xs font-bold text-white bg-field border border-field px-3 py-1.5 rounded-lg hover:bg-field/90 transition-all disabled:opacity-50"
+                        >
+                          {closingOrderId === order.id ? "Closing..." : "Close Bidding"}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -435,7 +488,17 @@ export function AdminDashboard() {
         );
       })()}
 
-      {/* Live AI Processing Monitor Panel */}
+      {/* 
+        =============================================================================
+        COMMENTED OUT SECTIONS (Per user request: hidden from Admin Dashboard):
+        1. AI Processing Monitor
+        2. AI Logistics Recommendation
+        3. Cluster Visualization (TacticalMap)
+        4. Live Driver Bidding (AuctionPanel)
+        5. Live Operations Timeline
+        =============================================================================
+      */}
+      {/* 
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel flex flex-col justify-between">
           <div>
@@ -467,7 +530,6 @@ export function AdminDashboard() {
             </div>
           </div>
 
-          {/* FEATURE 1: AI Trust Score Panel */}
           <div className={`mt-5 rounded-xl border p-4 ${trustColor} flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
             <div>
               <p className="text-xs uppercase font-extrabold tracking-wider text-stone-500">AI Trust Score</p>
@@ -514,13 +576,11 @@ export function AdminDashboard() {
         <RecommendationCard recommendation={recommendation} orders={orders} />
       </div>
 
-      {/* Map and Auction / Timeline Panels */}
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <TacticalMap orders={orders} />
         <div className="space-y-5 flex flex-col justify-between">
           <AuctionPanel bids={bids} />
           
-          {/* FEATURE 4: Live Operations Timeline Card */}
           <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel flex-1">
             <h2 className="text-lg font-bold text-soil flex items-center gap-2 mb-1">
               <span className="relative flex h-2.5 w-2.5">
@@ -557,6 +617,7 @@ export function AdminDashboard() {
           </section>
         </div>
       </div>
+      */}
 
       {/* Savings Analytics Trend */}
       <SavingsPanel orders={orders} trend={savingsTrend} />

@@ -35,16 +35,52 @@ def _get_api_key() -> str:
     return key
 
 
+def get_fallback_travel_time_matrix(locations: List[Dict]) -> Dict:
+    """Fallback n×n distance and travel time matrix when TOMTOM_API_KEY is not configured."""
+    import math
+    n = len(locations)
+    durations = [[0.0] * n for _ in range(n)]
+    distances = [[0.0] * n for _ in range(n)]
+    traffic_delays = [[0.0] * n for _ in range(n)]
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            dist_km = haversine(locations[i]["latitude"], locations[i]["longitude"], locations[j]["latitude"], locations[j]["longitude"]) * 1.25
+            dist_m = dist_km * 1000.0
+            # Average commercial truck speed ~40 km/h = 11.11 m/s
+            dur_s = (dist_km / 40.0) * 3600.0
+            distances[i][j] = round(dist_m, 1)
+            durations[i][j] = round(dur_s, 1)
+            traffic_delays[i][j] = round(dur_s * 0.1, 1)
+
+    return {"durations": durations, "distances": distances, "traffic_delays": traffic_delays}
+
+
 def get_travel_time_matrix(locations: List[Dict]) -> Dict:
     """
     Call TomTom Matrix Routing v2 for a full n×n matrix.
     Returns durations (travelTimeInSeconds), distances (lengthInMeters),
     and traffic_delays (trafficDelayInSeconds).
+    Falls back to high-accuracy road estimate if TOMTOM_API_KEY is not configured.
     """
     if not locations:
         raise TomTomError("No locations provided.")
 
-    api_key = _get_api_key()
+    try:
+        api_key = _get_api_key()
+    except TomTomKeyMissingError:
+        print("[TomTom Service] TOMTOM_API_KEY missing - using road fallback matrix.")
+        return get_fallback_travel_time_matrix(locations)
+
     n       = len(locations)
     points  = [{"point": {"latitude": loc["latitude"], "longitude": loc["longitude"]}}
                for loc in locations]

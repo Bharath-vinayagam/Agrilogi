@@ -3,7 +3,9 @@ export type OrderStatus =
   | "Cluster Forming"
   | "Driver Assigned"
   | "In Transit"
-  | "Completed";
+  | "Completed"
+  | "Bidding Closed"
+  | "Expired";
 
 export type FarmerOrder = {
   id: string;
@@ -26,6 +28,13 @@ export type FarmerOrder = {
   reviewRequired?: boolean;
   assignedDriver?: string | null;
   finalCost?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  clusterId?: string | null;
+  cluster_id?: string | null;
+  routePass?: string | null;
+  routeLegKm?: number | null;
+  assignedVehicleCapacityKg?: number | null;
 };
 
 export type Driver = {
@@ -81,16 +90,22 @@ export type TimeSlot = "morning" | "afternoon" | "evening";
 
 export type SlotBid = {
   id: string;
-  driverId?: string | null;  // Made optional since it can be NULL
-  driverName: string;
-  pickupDate: string;
-  pickupSlot: TimeSlot;
-  amount: number;  // Changed from bidAmount to match backend
+  driverId?: string | null;
+  driverName?: string;
+  driver_name?: string;
+  pickupDate?: string;
+  pickup_date?: string;
+  pickupSlot?: TimeSlot;
+  pickup_slot?: TimeSlot;
+  amount: number;
   vehicle: string;
-  reliabilityScore: number;
-  bidType: "slot";
+  reliabilityScore?: number;
+  reliability_score?: number;
+  bidType?: "slot" | "order";
+  bid_type?: "slot" | "order";
   status: "Open" | "Accepted" | "Rejected";
-  createdAt: string;
+  createdAt?: string;
+  created_at?: string;
 };
 
 export type SlotBidCreate = {

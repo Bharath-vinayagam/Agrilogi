@@ -12,3 +12,4 @@ __pycache__/
 # Exclude all markdown documentation files
 *.md
 !README.md
+!PROJECT_IMPLEMENTATION_GUIDE.md

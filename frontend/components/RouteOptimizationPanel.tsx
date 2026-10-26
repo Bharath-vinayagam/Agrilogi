@@ -29,13 +29,17 @@ interface RouteResult {
   vehicle_capacity_kg: number;
   capacity_utilization_percent: number;
   route: RouteStep[];
+  geometry?: any;
   comparison: {
+    label?: string;
     original_distance_km: number;
     optimized_distance_km: number;
     distance_saving_percent: number;
     original_duration_minutes: number;
     optimized_duration_minutes: number;
     time_saving_percent: number;
+    sequential_distance_km?: number;
+    sequence_saving_percent?: number;
   };
 }
 
@@ -140,24 +144,32 @@ export function RouteOptimizationPanel({ clusterId, farmerCount }: RouteOptimiza
 
           {/* Comparison */}
           <div className="rounded-lg bg-white border border-stone-100 p-3">
-            <p className="text-[10px] font-bold text-stone-500 uppercase mb-2">Original vs Optimized</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-stone-500 uppercase">Original vs Optimized</p>
+              <span className="text-[9px] font-semibold text-stone-400">Individual Direct Trips vs Consolidated Route</span>
+            </div>
             <div className="grid grid-cols-3 gap-2 text-[10px]">
               <div />
-              <div className="font-bold text-stone-500 text-center">Original</div>
-              <div className="font-bold text-river text-center">Optimized</div>
+              <div className="font-bold text-stone-500 text-center">Original (Unbundled)</div>
+              <div className="font-bold text-river text-center">Optimized (Consolidated)</div>
 
               <div className="text-stone-600">Distance</div>
               <div className="text-center text-stone-500">{result.comparison.original_distance_km} km</div>
               <div className="text-center font-bold text-river">{result.comparison.optimized_distance_km} km
-                <span className="ml-1 text-field">▼{result.comparison.distance_saving_percent}%</span>
+                <span className="ml-1 text-field font-black">▼{result.comparison.distance_saving_percent}%</span>
               </div>
 
               <div className="text-stone-600">Duration</div>
               <div className="text-center text-stone-500">{result.comparison.original_duration_minutes} min</div>
               <div className="text-center font-bold text-river">{result.comparison.optimized_duration_minutes} min
-                <span className="ml-1 text-field">▼{result.comparison.time_saving_percent}%</span>
+                <span className="ml-1 text-field font-black">▼{result.comparison.time_saving_percent}%</span>
               </div>
             </div>
+            {result.comparison.sequence_saving_percent !== undefined && result.comparison.sequence_saving_percent > 0 && (
+              <p className="mt-2 text-[9px] text-field font-semibold text-right">
+                ✨ +{result.comparison.sequence_saving_percent}% extra distance saved by OR-Tools waypoint re-sequencing
+              </p>
+            )}
           </div>
 
           {/* Route map */}
@@ -169,8 +181,8 @@ export function RouteOptimizationPanel({ clusterId, farmerCount }: RouteOptimiza
           <div className="rounded-lg bg-white border border-stone-100 p-3">
             <p className="text-[10px] font-bold text-stone-500 uppercase mb-2">Pickup Sequence</p>
             <ol className="space-y-1.5">
-              {result.route.map((step) => (
-                <li key={`${step.type}-${step.id}`} className="flex items-center gap-2 text-xs">
+              {result.route.map((step, idx) => (
+                <li key={`${step.type}-${step.id}-${step.sequence ?? idx}`} className="flex items-center gap-2 text-xs">
                   <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${
                     step.type === "mandi" ? "bg-field text-white" : "bg-river/20 text-river"
                   }`}>

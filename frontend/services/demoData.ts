@@ -12,7 +12,10 @@ export const farmerOrders: FarmerOrder[] = [
     destination: "Koyambedu Mandi",
     individualCost: 3400,
     sharedCost: 1450,
-    pickupTime: "Today, 5:30 PM"
+    pickupTime: "Today, 5:30 PM",
+    lat: 12.516,
+    lng: 79.158,
+    clusterId: "CL-0"
   },
   {
     id: "KB1025",
@@ -25,7 +28,10 @@ export const farmerOrders: FarmerOrder[] = [
     destination: "Koyambedu Mandi",
     individualCost: 3100,
     sharedCost: 1320,
-    pickupTime: "Today, 5:45 PM"
+    pickupTime: "Today, 5:45 PM",
+    lat: 12.550,
+    lng: 79.200,
+    clusterId: "CL-0"
   },
   {
     id: "KB1026",
@@ -38,7 +44,10 @@ export const farmerOrders: FarmerOrder[] = [
     destination: "Koyambedu Mandi",
     individualCost: 2600,
     sharedCost: 1180,
-    pickupTime: "Today, 6:10 PM"
+    pickupTime: "Today, 6:10 PM",
+    lat: 12.520,
+    lng: 79.180,
+    clusterId: "CL-0"
   }
 ];
 

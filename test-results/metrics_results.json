@@ -1,0 +1,185 @@
+{
+  "timestamp": "2026-10-16T09:06:10.170794",
+  "summary": {
+    "total_metrics": 7,
+    "data_sources": [
+      "Supabase Database",
+      "Live API Testing"
+    ],
+    "measurement_window": "All historical data"
+  },
+  "metrics": {
+    "total_cost_savings": {
+      "name": "Total Cost Savings",
+      "formula": "Sum of (individual_cost - shared_cost) for all orders",
+      "baseline": 20600,
+      "optimized": 17963,
+      "actual_result": 2637,
+      "unit": "INR (\u20b9)",
+      "sample_size": 9,
+      "data_source": "orders table via /api/bookings",
+      "measurement_method": "MEASURED - Direct database query",
+      "evidence": "9 orders with cost data"
+    },
+    "cost_reduction_percentage": {
+      "name": "Average Cost Reduction Percentage",
+      "formula": "((individual_cost - shared_cost) / individual_cost) \u00d7 100",
+      "baseline": 100.0,
+      "actual_result": 28.87,
+      "unit": "Percentage (%)",
+      "sample_size": 9,
+      "data_source": "orders table via /api/bookings",
+      "measurement_method": "CALCULATED - Statistical mean of individual reductions",
+      "evidence": "Min: 22.1%, Max: 33.9%, Median: 29.4%"
+    },
+    "api_success_rate": {
+      "name": "API Endpoint Success Rate",
+      "formula": "(Successful requests / Total requests) \u00d7 100",
+      "baseline": 100.0,
+      "actual_result": 100.0,
+      "unit": "Percentage (%)",
+      "sample_size": 4,
+      "data_source": "Live API testing",
+      "measurement_method": "MEASURED - Direct HTTP requests to all endpoints",
+      "evidence": "4 successful, 0 failed out of 4"
+    },
+    "booking_completion_rate": {
+      "name": "Booking Completion Rate",
+      "formula": "(Completed bookings / Total bookings) \u00d7 100",
+      "baseline": 100.0,
+      "actual_result": 0.0,
+      "unit": "Percentage (%)",
+      "sample_size": 12,
+      "data_source": "orders table via /api/bookings",
+      "measurement_method": "CALCULATED - Status field analysis",
+      "evidence": "Status breakdown: {'Bidding Closed': 8, 'Cluster Forming': 1, 'Driver Assigned': 3}"
+    },
+    "avg_weight_per_booking": {
+      "name": "Average Weight Per Booking",
+      "formula": "Mean of weight_kg across all bookings",
+      "baseline": null,
+      "actual_result": 330.83,
+      "unit": "Kilograms (kg)",
+      "sample_size": 12,
+      "data_source": "orders table via /api/bookings",
+      "measurement_method": "CALCULATED - Statistical mean",
+      "evidence": "Total: 3,970kg, Range: 150-800kg, Median: 310.0kg"
+    },
+    "driver_utilization": {
+      "name": "Driver Utilization Rate",
+      "formula": "(Drivers with assignments / Total drivers) \u00d7 100",
+      "baseline": 100.0,
+      "actual_result": 16.67,
+      "unit": "Percentage (%)",
+      "sample_size": 6,
+      "data_source": "drivers and orders tables",
+      "measurement_method": "CALCULATED - Set intersection of assigned drivers",
+      "evidence": "1 active out of 6 total drivers"
+    },
+    "avg_bids_per_order": {
+      "name": "Average Bids Per Order",
+      "formula": "Mean number of bids per order",
+      "baseline": null,
+      "actual_result": 0,
+      "unit": "Bids per order",
+      "sample_size": 0,
+      "data_source": "bids table via /api/auction/bids",
+      "measurement_method": "CALCULATED - Grouped count and mean",
+      "evidence": "Range: 0-0 bids, 8 total bids for 0 orders"
+    }
+  },
+  "evidence": {
+    "cost_savings_detail": [
+      {
+        "id": "KB1032",
+        "farmer": "Meena1",
+        "individual": 1090,
+        "shared": 792,
+        "savings": 298
+      },
+      {
+        "id": "KB1031",
+        "farmer": "Arumugam1",
+        "individual": 1381,
+        "shared": 938,
+        "savings": 443
+      },
+      {
+        "id": "KB1030",
+        "farmer": "Selvi",
+        "individual": 600,
+        "shared": 454,
+        "savings": 146
+      },
+      {
+        "id": "KB1029",
+        "farmer": "Mad",
+        "individual": 1050,
+        "shared": 701,
+        "savings": 349
+      },
+      {
+        "id": "KB1028",
+        "farmer": "muruga",
+        "individual": 1050,
+        "shared": 701,
+        "savings": 349
+      },
+      {
+        "id": "KB1027",
+        "farmer": "Selvi",
+        "individual": 600,
+        "shared": 454,
+        "savings": 146
+      },
+      {
+        "id": "KB1026",
+        "farmer": "Meena",
+        "individual": 1032,
+        "shared": 729,
+        "savings": 303
+      },
+      {
+        "id": "KB1025",
+        "farmer": "Arun",
+        "individual": 612,
+        "shared": 477,
+        "savings": 135
+      },
+      {
+        "id": "KB1024",
+        "farmer": "Arumugam",
+        "individual": 1381,
+        "shared": 913,
+        "savings": 468
+      }
+    ],
+    "api_test_results": [
+      {
+        "endpoint": "/health",
+        "status": "SUCCESS",
+        "code": 200
+      },
+      {
+        "endpoint": "/api/bookings",
+        "status": "SUCCESS",
+        "code": 200
+      },
+      {
+        "endpoint": "/api/drivers",
+        "status": "SUCCESS",
+        "code": 200
+      },
+      {
+        "endpoint": "/api/admin/snapshot",
+        "status": "SUCCESS",
+        "code": 200
+      }
+    ]
+  },
+  "raw_data_counts": {
+    "bookings": 12,
+    "drivers": 6,
+    "bids": 8
+  }
+}

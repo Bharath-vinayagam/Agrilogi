@@ -46,42 +46,38 @@ export default function DriverTripPage() {
   const [isAutoSimulating, setIsAutoSimulating] = useState(false);
 
   // Stats / Metrics
-  const [distanceSaved, setDistanceSaved] = useState(12);
-  const [fuelSaved, setFuelSaved] = useState(8);
-  const [co2Saved, setCo2Saved] = useState(18);
-  const [routeScore, setRouteScore] = useState(92);
+  const [distanceSaved, setDistanceSaved] = useState(0);
+  const [co2Saved, setCo2Saved] = useState(0);
+  const [routeScore, setRouteScore] = useState(0);
+
+  // Real trip data
+  const [tripWeight, setTripWeight] = useState(0);
+  const [tripCapacity, setTripCapacity] = useState(1100);
+  const [tripUtilization, setTripUtilization] = useState(0);
+  const [tripPayout, setTripPayout] = useState(0);
+  const [contacts, setContacts] = useState<FarmerContact[]>([]);
+  const [mapPoints, setMapPoints] = useState([
+    { id: "base", x: 60, y: 210, label: "Driver Base", sub: "Start Point" },
+    { id: "stop1", x: 140, y: 170, label: "Pickup A", sub: "Loading..." },
+    { id: "stop2", x: 240, y: 90, label: "Pickup B", sub: "Loading..." },
+    { id: "stop3", x: 330, y: 190, label: "Pickup C", sub: "Loading..." },
+    { id: "mandi", x: 440, y: 110, label: "Koyambedu Mandi", sub: "Final Destination" }
+  ]);
 
   // SOS state
   const [sosActive, setSosActive] = useState(false);
   const [sosSent, setSosSent] = useState(false);
-
-  // Mock Route Points for SVG Map
-  const points = [
-    { id: "base", x: 60, y: 210, label: "Driver Base", sub: "Start Point" },
-    { id: "melma", x: 140, y: 170, label: "Melma Farmers Pool", sub: "Pickup A - Tomato 900kg" },
-    { id: "athur", x: 240, y: 90, label: "Athur Cooperative", sub: "Pickup B - Brinjal 300kg" },
-    { id: "sevoor", x: 330, y: 190, label: "Sevoor Collection", sub: "Pickup C - Eggplants 200kg" },
-    { id: "mandi", x: 440, y: 110, label: "Koyambedu Mandi", sub: "Final Destination" }
-  ];
-
-  // Contacts
-  const contacts: FarmerContact[] = [
-    { name: "Farmer Arumugam", village: "Melma", phone: "+91 90030 11224", crop: "Tomato", weight: 900 },
-    { name: "Farmer Selvam", village: "Athur", phone: "+91 94441 55621", crop: "Brinjal", weight: 300 },
-    { name: "Farmer Mani", village: "Sevoor", phone: "+91 98402 33412", crop: "Eggplant", weight: 200 }
-  ];
 
   // Load Active Trip
   const loadTrip = async () => {
     if (!user) return;
     setLoadingTrip(true);
     try {
-      // Fetch latest trip assignment that is not Completed/Delivered
       const { data: assignment, error } = await supabase
         .from("trip_assignments")
         .select("*")
         .eq("driver_id", user.driverId || user.id)
-        .not("trip_status", "in", '("Completed", "Delivered")')
+        .not("trip_status", "in", '(Completed,Delivered)')
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -90,8 +86,11 @@ export default function DriverTripPage() {
         setActiveTrip(assignment);
         setTripStatus(assignment.trip_status);
         mapStatusToStage(assignment.trip_status);
+        // Use cluster_id from assignment (not bundle_id)
+        const clusterId = assignment.cluster_id || assignment.bundle_id;
+        console.log(`🚛 Active trip found: ${assignment.id}, cluster: ${clusterId}`);
+        await loadBundleData(clusterId);
       } else {
-        // Fallback mockup trip if none active
         setActiveTrip(null);
         setTripStatus("NoActive");
         setTripStage(-1);
@@ -100,6 +99,161 @@ export default function DriverTripPage() {
       console.error("Error loading active trip:", err);
     } finally {
       setLoadingTrip(false);
+    }
+  };
+
+  // Load real bundle + order data for the active trip
+  const loadBundleData = async (clusterId: string) => {
+    if (!clusterId) {
+      console.warn('⚠️ No cluster ID provided to loadBundleData');
+      return;
+    }
+    console.log(`📦 Loading bundle data for cluster: ${clusterId}`);
+    try {
+      // Get bundle info (bundles table uses 'id' which matches cluster_id)
+      const { data: bundle, error: bundleError } = await supabase
+        .from("bundles")
+        .select("*")
+        .eq("id", clusterId)
+        .maybeSingle();
+
+      if (bundleError) {
+        console.error('Bundle fetch error:', bundleError);
+      }
+
+      if (bundle) {
+        console.log(`✅ Bundle found:`, bundle);
+        const capacity = 1100;
+        const util = Math.min(100, Math.round((bundle.total_weight_kg / capacity) * 100));
+        setTripWeight(bundle.total_weight_kg);
+        setTripCapacity(capacity);
+        setTripUtilization(util);
+        // Payout is set after orders are loaded (sum of shared_costs)
+      } else {
+        console.warn(`⚠️ No bundle found for cluster ${clusterId}`);
+      }
+
+      // Get orders for this cluster
+      const { data: orders, error: ordersError } = await supabase
+        .from("orders")
+        .select("id, farmer_name, phone, village, crop, weight_kg, lat, lng, route_leg_km, individual_cost, shared_cost, final_cost")
+        .eq("cluster_id", clusterId);
+
+      if (ordersError) {
+        console.error('Orders fetch error:', ordersError);
+      }
+
+      console.log(`📦 Loaded ${orders?.length || 0} orders for cluster ${clusterId}`);
+
+      if (orders && orders.length > 0) {
+          // Real payout = sum of shared costs (what each farmer pays = what driver earns total)
+          // Use final_cost if available, otherwise shared_cost
+          const totalPayout = orders.reduce((sum: number, o: any) => {
+            const payout = o.final_cost || o.shared_cost || 0;
+            console.log(`Order ${o.id} payout: ₹${payout} (final_cost: ${o.final_cost}, shared_cost: ${o.shared_cost})`);
+            return sum + payout;
+          }, 0);
+          console.log(`✅ Total trip payout calculated: ₹${totalPayout} from ${orders.length} orders`);
+          setTripPayout(totalPayout);
+
+          // Real capacity from bundle
+          if (bundle) {
+            const capacity = 1100;
+            const util = Math.min(100, Math.round((bundle.total_weight_kg / capacity) * 100));
+            setTripWeight(bundle.total_weight_kg);
+            setTripCapacity(capacity);
+            setTripUtilization(util);
+          }
+          // Build contacts list from real orders
+          const realContacts: FarmerContact[] = orders.map((o: any) => ({
+            name: o.farmer_name,
+            village: o.village,
+            phone: o.phone,
+            crop: o.crop,
+            weight: o.weight_kg
+          }));
+          setContacts(realContacts);
+
+          // Build SVG map points — only real stops, no padding
+          const svgPositions = [
+            { x: 140, y: 170 }, { x: 240, y: 90 }, { x: 330, y: 190 }
+          ];
+          const realOrders = orders.slice(0, 3);
+          const stopPoints = realOrders.map((o: any, i: number) => ({
+            id: `stop${i + 1}`,
+            x: svgPositions[i].x,
+            y: svgPositions[i].y,
+            label: o.farmer_name,
+            sub: `${o.crop} ${o.weight_kg}kg`
+          }));
+
+          // Pad to exactly 3 stops for SVG path consistency (hidden, same coords as last real stop)
+          while (stopPoints.length < 3) {
+            const last = stopPoints[stopPoints.length - 1] || svgPositions[0];
+            stopPoints.push({
+              id: `stop${stopPoints.length + 1}`,
+              x: last.x,
+              y: last.y,
+              label: "",
+              sub: ""
+            });
+          }
+
+          const newPoints = [
+            { id: "base", x: 60, y: 210, label: "Driver Base", sub: "Start Point" },
+            ...stopPoints,
+            { id: "mandi", x: 440, y: 110, label: "Koyambedu Mandi", sub: "Final Destination" }
+          ];
+          setMapPoints(newPoints);
+
+          // Distance savings calculation
+          const mandiLat = 13.0716, mandiLng = 80.1945;
+          const geoOrders = orders.filter((o: any) => o.lat && o.lng);
+
+          // Individual baseline: each farmer hires own truck = round trip to mandi
+          let totalIndividualDist = 0;
+          geoOrders.forEach((o: any) => {
+            const dLat = (parseFloat(o.lat) - mandiLat) * Math.PI / 180;
+            const dLng = (parseFloat(o.lng) - mandiLng) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(parseFloat(o.lat) * Math.PI / 180) *
+              Math.cos(mandiLat * Math.PI / 180) *
+              Math.sin(dLng / 2) ** 2;
+            totalIndividualDist += 6371 * 2 * Math.asin(Math.sqrt(a)) * 2; // round trip
+          });
+
+          // Consolidated: use stored route_leg_km from OR-Tools if available
+          const hasRouteData = orders.some((o: any) => o.route_leg_km && o.route_leg_km > 0);
+          let consolidatedTotal = 0;
+          if (hasRouteData) {
+            const totalLegs = orders.reduce((s: number, o: any) => s + (o.route_leg_km || 0), 0);
+            const legsWithData = orders.filter((o: any) => o.route_leg_km > 0).length;
+            consolidatedTotal = totalLegs + (legsWithData > 0 ? totalLegs / legsWithData : 0);
+          } else {
+            let totalRouteDist = 0;
+            geoOrders.forEach((o: any) => {
+              const dLat = (parseFloat(o.lat) - mandiLat) * Math.PI / 180;
+              const dLng = (parseFloat(o.lng) - mandiLng) * Math.PI / 180;
+              const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(parseFloat(o.lat) * Math.PI / 180) *
+                Math.cos(mandiLat * Math.PI / 180) *
+                Math.sin(dLng / 2) ** 2;
+              totalRouteDist += 6371 * 2 * Math.asin(Math.sqrt(a));
+            });
+            consolidatedTotal = totalRouteDist * 1.25; // road winding factor
+          }
+
+          const distSaved = Math.round(Math.max(0, totalIndividualDist - consolidatedTotal));
+          // Route score: 60 base + up to 40 from savings ratio
+          const score = totalIndividualDist > 0
+            ? Math.min(100, Math.round(60 + (distSaved / totalIndividualDist) * 40))
+            : 60;
+
+          setDistanceSaved(distSaved);
+          setRouteScore(score);
+      }
+    } catch (err) {
+      console.error("Error loading bundle data:", err);
     }
   };
 
@@ -209,9 +363,9 @@ export default function DriverTripPage() {
       await supabase.from("bundles").insert({
         id: bundleId,
         destination: "Koyambedu Mandi",
-        total_weight_kg: 1400,
-        truck_utilization: 93,
-        estimated_savings: 3400,
+        total_weight_kg: 970,
+        truck_utilization: 88,
+        estimated_savings: 2800,
         spoilage_risk: "Low",
         suggested_departure_time: "07:30 AM"
       });
@@ -253,21 +407,23 @@ export default function DriverTripPage() {
 
   // Calculate truck icon coordinates based on tripStage
   const getTruckCoords = () => {
+    const pts = mapPoints;
+    if (pts.length < 5) return { x: 60, y: 210 };
     switch (tripStage) {
-      case 0: // Driver Assigned (at Base)
-        return { x: points[0].x, y: points[0].y };
-      case 1: // En Route to Pickup (between Base and Melma)
-        return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 - 5 };
-      case 2: // Pickup Complete (at Melma)
-        return { x: points[1].x, y: points[1].y };
-      case 3: // In Transit (between Sevoor and Mandi)
-        return { x: (points[3].x + points[4].x) / 2, y: (points[3].y + points[4].y) / 2 };
-      case 4: // Approaching Destination (approaching Koyambedu)
-        return { x: points[4].x - 30, y: points[4].y + 15 };
-      case 5: // Delivered (at Mandi)
-        return { x: points[4].x, y: points[4].y };
+      case 0:
+        return { x: pts[0].x, y: pts[0].y };
+      case 1:
+        return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 - 5 };
+      case 2:
+        return { x: pts[1].x, y: pts[1].y };
+      case 3:
+        return { x: (pts[3].x + pts[4].x) / 2, y: (pts[3].y + pts[4].y) / 2 };
+      case 4:
+        return { x: pts[4].x - 30, y: pts[4].y + 15 };
+      case 5:
+        return { x: pts[4].x, y: pts[4].y };
       default:
-        return { x: points[0].x, y: points[0].y };
+        return { x: pts[0].x, y: pts[0].y };
     }
   };
 
@@ -364,11 +520,7 @@ export default function DriverTripPage() {
                 <div className="flex justify-between items-start border-b border-stone-100 pb-3">
                   <div>
                     <span className="text-[10px] text-stone-400 font-extrabold uppercase tracking-wide">Active Assignment</span>
-                    <h3 className="text-sm font-black text-soil uppercase">Bundle #{activeTrip?.bundle_id || "KB1024"}</h3>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-stone-400 font-extrabold uppercase tracking-wide">Expected Payout</span>
-                    <p className="text-lg font-black text-field">₹4,200</p>
+                    <h3 className="text-sm font-black text-soil uppercase">Bundle #{activeTrip?.cluster_id || activeTrip?.bundle_id || "N/A"}</h3>
                   </div>
                 </div>
 
@@ -424,7 +576,7 @@ export default function DriverTripPage() {
                       <div className="rounded-xl bg-field/5 border border-field/20 p-4 text-center">
                         <CheckCircle2 size={36} className="mx-auto text-field mb-2 animate-bounce" />
                         <h4 className="text-sm font-bold text-soil">Delivery Verified!</h4>
-                        <p className="text-xs text-stone-500 mt-1">₹4,200 payout has been credited to your wallet.</p>
+                        <p className="text-xs text-stone-500 mt-1">Your delivery has been confirmed and recorded.</p>
                       </div>
                       <button
                         onClick={async () => {
@@ -458,15 +610,15 @@ export default function DriverTripPage() {
                   </h4>
                   <div className="space-y-2">
                     <div className="flex justify-between items-baseline">
-                      <span className="text-lg font-black text-soil">1,400 kg <span className="text-xs font-medium text-stone-400">/ 1,500 kg</span></span>
-                      <span className="text-xs font-bold text-field bg-field/10 px-2 py-0.5 rounded">93% Full</span>
+                      <span className="text-lg font-black text-soil">{tripWeight.toLocaleString()} kg <span className="text-xs font-medium text-stone-400">/ {tripCapacity.toLocaleString()} kg</span></span>
+                      <span className="text-xs font-bold text-field bg-field/10 px-2 py-0.5 rounded">{tripUtilization}% Full</span>
                     </div>
                     {/* Utilization Progress Bar */}
                     <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
                       <motion.div 
                         className="h-full bg-gradient-to-r from-soil to-field"
                         initial={{ width: 0 }}
-                        animate={{ width: "93%" }}
+                        animate={{ width: `${tripUtilization}%` }}
                         transition={{ duration: 1, ease: "easeOut" }}
                       />
                     </div>
@@ -480,14 +632,10 @@ export default function DriverTripPage() {
                     <Compass size={14} className="text-soil" />
                     Route Efficiency
                   </h4>
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="bg-stone-50 border border-stone-150 rounded-lg p-2">
+                  <div className="grid grid-cols-1 gap-2 text-center">
+                    <div className="bg-stone-50 border border-stone-150 rounded-lg p-3">
                       <span className="text-[9px] text-stone-400 font-bold uppercase block">Distance Saved</span>
-                      <strong className="text-sm font-black text-soil">{distanceSaved} km</strong>
-                    </div>
-                    <div className="bg-stone-50 border border-stone-150 rounded-lg p-2">
-                      <span className="text-[9px] text-stone-400 font-bold uppercase block">CO₂ Saved</span>
-                      <strong className="text-sm font-black text-field">{co2Saved} kg</strong>
+                      <strong className="text-lg font-black text-soil">{distanceSaved} km</strong>
                     </div>
                   </div>
                   <div className="flex justify-between items-center text-[10px] text-stone-500 pt-1 border-t border-stone-100">
@@ -604,18 +752,20 @@ export default function DriverTripPage() {
                     <circle cx="230" cy="150" r="130" fill="#4f7d5a08" stroke="#4f7d5a" strokeWidth="1" strokeDasharray="5 5" />
 
                     {/* Dotted Connection Roads */}
+                    {mapPoints.length === 5 && (
                     <path 
-                      d={`M ${points[0].x} ${points[0].y} Q 100 190 ${points[1].x} ${points[1].y} T ${points[2].x} ${points[2].y} T ${points[3].x} ${points[3].y} Q 380 140 ${points[4].x} ${points[4].y}`} 
+                      d={`M ${mapPoints[0].x} ${mapPoints[0].y} Q 100 190 ${mapPoints[1].x} ${mapPoints[1].y} T ${mapPoints[2].x} ${mapPoints[2].y} T ${mapPoints[3].x} ${mapPoints[3].y} Q 380 140 ${mapPoints[4].x} ${mapPoints[4].y}`} 
                       fill="none" 
                       stroke="#cbd8c6" 
                       strokeWidth="6" 
                       strokeLinecap="round" 
                     />
+                    )}
 
                     {/* Active Route Highlight (based on stage) */}
-                    {tripStage > 0 && (
+                    {tripStage > 0 && mapPoints.length === 5 && (
                       <motion.path 
-                        d={`M ${points[0].x} ${points[0].y} Q 100 190 ${points[1].x} ${points[1].y} T ${points[2].x} ${points[2].y} T ${points[3].x} ${points[3].y} Q 380 140 ${points[4].x} ${points[4].y}`} 
+                        d={`M ${mapPoints[0].x} ${mapPoints[0].y} Q 100 190 ${mapPoints[1].x} ${mapPoints[1].y} T ${mapPoints[2].x} ${mapPoints[2].y} T ${mapPoints[3].x} ${mapPoints[3].y} Q 380 140 ${mapPoints[4].x} ${mapPoints[4].y}`} 
                         fill="none" 
                         stroke="url(#routeGradient)" 
                         strokeWidth="4" 
@@ -627,7 +777,7 @@ export default function DriverTripPage() {
                     )}
 
                     {/* SVG Waypoints / Nodes */}
-                    {points.map((pt, index) => {
+                    {mapPoints.map((pt, index) => {
                       // Determine status of this point
                       let color = "#788771"; // Future
                       let size = 6;

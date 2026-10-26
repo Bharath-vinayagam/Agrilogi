@@ -13,6 +13,7 @@ Slot schedule (IST = UTC+5:30):
 """
 
 from datetime import datetime, timezone, timedelta
+import time
 import numpy as np
 from sklearn.cluster import DBSCAN
 
@@ -50,25 +51,53 @@ def slot_label(slot_dt: datetime) -> str:
     return f"{day}, {hour}:{minute} {ampm}"
 
 
-def _persist_cluster(order_ids: list[str], cluster_id: str, slot_dt: datetime, farmer_costs: list[dict]) -> None:
-    """Update all orders in a cluster with cluster_id, status, pickup_time, shared_cost."""
+def _persist_cluster(
+    order_ids: list[str],
+    cluster_id: str,
+    slot_dt: datetime,
+    farmer_costs: list[dict],
+    destination: str = "Koyambedu Mandi",
+    total_weight: int = 0
+) -> None:
+    """Update all orders in a cluster and persist bundle record for auctions."""
     if not supabase_client:
         return
 
-    cost_map = {fc["order_id"]: fc["bundled_cost"] for fc in farmer_costs}
+    cost_map = {fc["order_id"]: fc.get("shared_cost", fc.get("bundled_cost", 0)) for fc in farmer_costs}
+    leg_map = {fc["order_id"]: fc.get("leg_km", 0.0) for fc in farmer_costs}
     pickup = slot_label(slot_dt)
+    total_savings = sum(fc.get("savings", 0) for fc in farmer_costs)
+    truck_utilization = min(100, round((total_weight / 1100.0) * 100)) if total_weight > 0 else 0
+
+    try:
+        supabase_client.table("bundles").upsert({
+            "id": cluster_id,
+            "destination": destination,
+            "total_weight_kg": total_weight,
+            "truck_utilization": truck_utilization,
+            "estimated_savings": total_savings,
+            "spoilage_risk": "Low",
+            "suggested_departure_time": pickup,
+        }).execute()
+    except Exception as e:
+        print(f"Error persisting bundle {cluster_id}: {e}")
 
     for order_id in order_ids:
         try:
-            supabase_client.table("orders").update({
+            result = supabase_client.table("orders").update({
                 "status": "Cluster Forming",
                 "cluster_id": cluster_id,
                 "cluster_slot": slot_dt.isoformat(),
                 "pickup_time": pickup,
                 "shared_cost": cost_map.get(order_id, 0),
+                "route_leg_km": leg_map.get(order_id, 0.0),
+                "route_pass": "provisional",
             }).eq("id", order_id).execute()
+            
+            print(f"✅ Updated order {order_id}: shared_cost=₹{cost_map.get(order_id, 0)}, status='Cluster Forming'")
+            
         except Exception as e:
-            print(f"Error persisting cluster for order {order_id}: {e}")
+            print(f"❌ Error persisting cluster for order {order_id}: {e}")
 
 
 def _enforce_same_farmer_constraint(groups: dict[int, list]) -> dict[int, list]:
@@ -127,9 +156,9 @@ def build_clusters() -> list[dict]:
         if not orders:
             return []
 
-        pending_orders = [o for o in orders if o["status"] == "Pending"]
+        pending_orders = [o for o in orders if o["status"] in ("Pending", "Awaiting Cluster", "Cluster Forming")]
         if not pending_orders:
-            print("No Pending orders to cluster.")
+            print("No Pending, Awaiting Cluster, or Cluster Forming orders to cluster.")
             return []
 
         print(f"Clustering {len(pending_orders)} Pending orders...")
@@ -149,6 +178,7 @@ def build_clusters() -> list[dict]:
         group_counter = 0
 
         for dest, dest_orders in destination_groups.items():
+            dest_groups: dict[int, list] = {}
             geo_orders = [o for o in dest_orders if o.get("lat") and o.get("lng")]
             no_geo_orders = [o for o in dest_orders if not o.get("lat") or not o.get("lng")]
 
@@ -162,36 +192,47 @@ def build_clusters() -> list[dict]:
                 ).fit(coords_rad)
 
                 for idx, label in enumerate(db.labels_):
-                    global_label = group_counter + label
-                    if global_label not in all_groups:
-                        all_groups[global_label] = []
-                    all_groups[global_label].append(geo_orders[idx])
+                    if label not in dest_groups:
+                        dest_groups[label] = []
+                    dest_groups[label].append(geo_orders[idx])
 
-                group_counter += (max(db.labels_) + 1) if len(db.labels_) > 0 else 1
-
-            # Orders without GPS coords each get a solo group per destination
+            # Orders without GPS coords each get a solo group
+            next_label = (max(dest_groups.keys()) + 1) if dest_groups else 0
             for order in no_geo_orders:
-                all_groups[group_counter] = [order]
+                dest_groups[next_label] = [order]
+                next_label += 1
+                print(f"Order {order['id']} (no coords, dest={dest}) -> solo cluster")
+
+            # Enforce same-farmer constraint WITHIN this destination
+            dest_groups = _enforce_same_farmer_constraint(dest_groups)
+
+            # Assign global group counters
+            for _, grp_orders in dest_groups.items():
+                all_groups[group_counter] = grp_orders
                 group_counter += 1
-                print(f"Order {order['id']} (no coords, dest={dest}) → solo cluster")
 
         groups = all_groups
-
-        # Enforce same-farmer constraint
-        groups = _enforce_same_farmer_constraint(groups)
 
         slot_dt = next_slot_time()
         clusters = []
 
+        run_tag = int(time.time()) % 100000
         for label, group_orders in groups.items():
-            cluster_id = f"CL-{label}"
+            cluster_id = f"CL-{slot_dt.strftime('%m%d')}-{run_tag}-{label}"
             order_ids = [o["id"] for o in group_orders]
             crops = [o["crop"] for o in group_orders]
             villages = list(set(o["village"] for o in group_orders))
             total_weight = sum(int(o["weight_kg"]) for o in group_orders)
-
-            allocation = allocate_cluster_costs(group_orders)
-            _persist_cluster(order_ids, cluster_id, slot_dt, allocation["farmer_costs"])
+            dest = group_orders[0].get("destination") or "Koyambedu Mandi"
+            allocation = allocate_cluster_costs(group_orders, dest)
+            _persist_cluster(
+                order_ids,
+                cluster_id,
+                slot_dt,
+                allocation["farmer_costs"],
+                destination=dest,
+                total_weight=total_weight
+            )
 
             clusters.append({
                 "id": cluster_id,

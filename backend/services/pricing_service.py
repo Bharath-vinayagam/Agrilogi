@@ -1,72 +1,94 @@
 """
 services/pricing_service.py
 
-Calculates individual and shared transport costs based on real distance.
+Calculates individual transport costs based on real distance to mandi,
+vehicle class rates, and dynamic weight factors.
 
-Individual cost = what the farmer would pay hiring a truck alone:
-    individual_cost = distance_to_mandi_km × COST_PER_KM × (weight_kg / TRUCK_CAPACITY_KG)
+Formula for Solo Transport:
+"What would this farmer pay hiring a truck alone?"
+    Solo cost = Driver's full trip cost (fuel + wage) × distance + base fee
+    This represents hiring the entire vehicle for the trip.
 
-Shared cost = set by cost_allocation.py after clustering.
+Formula for Shared Transport:
+"What does each farmer pay when pooled together?"
+    Total pool cost = Solo cost for the route
+    Each farmer's share = (Total pool cost / number of farmers) + proportional allocation
 """
 
 import math
+from typing import Optional
 
-COST_PER_KM       = 20       # ₹20 per km (Tamil Nadu truck hire rate)
-TRUCK_CAPACITY_KG = 1100     # Standard cooperative truck
-FALLBACK_RATE_PER_KG = 8     # Fallback flat rate when distance is unknown
-
-# Known mandi coordinates (mirrors route_optimization.py)
-MANDI_COORDS = {
-    "koyambedu mandi":  {"lat": 13.0716, "lng": 80.1945},
-    "madurai mandi":    {"lat":  9.9252, "lng": 78.1198},
-    "coimbatore mandi": {"lat": 11.0168, "lng": 76.9558},
-    "salem mandi":      {"lat": 11.6643, "lng": 78.1460},
-    "trichy mandi":     {"lat": 10.7905, "lng": 78.7047},
-    "vellore mandi":    {"lat": 12.9165, "lng": 79.1325},
-    "delhi mandi":      {"lat": 28.7196, "lng": 77.1724},
-}
+from services.mandi_config import get_mandi_coords
+from services.rate_config import (
+    get_vehicle_class_for_weight,
+    MIN_RATE_PER_KG,
+    FALLBACK_RATE_PER_KG,
+)
 
 
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculates great-circle distance between two points in kilometers."""
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlng / 2) ** 2
+    )
     return R * 2 * math.asin(math.sqrt(a))
-
-
-def get_mandi_coords(destination: str) -> tuple[float, float] | None:
-    """Return (lat, lng) for a known mandi destination string."""
-    key = destination.strip().lower()
-    for k, v in MANDI_COORDS.items():
-        if k in key or key in k:
-            return v["lat"], v["lng"]
-    return None
 
 
 def calculate_individual_cost(
     weight_kg: int,
-    farmer_lat: float | None,
-    farmer_lng: float | None,
+    farmer_lat: Optional[float],
+    farmer_lng: Optional[float],
     destination: str,
 ) -> int:
     """
-    Returns the individual cost for a farmer transporting alone.
-
-    Formula:
-        individual_cost = distance_to_mandi_km × 20 × (weight_kg / 1100)
-
-    Falls back to weight × 8 if coordinates are missing or mandi is unknown.
+    Returns the individual transport cost for a farmer hiring an appropriate truck alone.
+    This is the SOLO cost - hiring the entire vehicle yourself.
+    
+    Solo Cost = Base Fee + (Distance × (Fuel + Driver Wage per km))
     """
-    if farmer_lat and farmer_lng:
+    if weight_kg <= 0:
+        return 0
+
+    if farmer_lat is not None and farmer_lng is not None and destination:
         mandi = get_mandi_coords(destination)
         if mandi:
             mandi_lat, mandi_lng = mandi
             distance_km = _haversine_km(farmer_lat, farmer_lng, mandi_lat, mandi_lng)
-            cost = round(distance_km * COST_PER_KM * (weight_kg / TRUCK_CAPACITY_KG))
-            # Ensure minimum reasonable cost (short distances can give very low values)
-            return max(cost, round(weight_kg * 3))
+            v_class = get_vehicle_class_for_weight(weight_kg)
+            
+            # Solo transport = hiring the full vehicle
+            # Driver needs to cover: fuel + their wage
+            base_fee = v_class["base_fee"]
+            fuel_per_km = v_class["fuel_cost_per_km"]
+            driver_per_km = v_class["driver_cost_per_km"]
+            
+            # Total cost for hiring the truck solo
+            cost = base_fee + (distance_km * (fuel_per_km + driver_per_km))
+            
+            # Enforce minimum rate floor (₹3/kg)
+            floor_cost = weight_kg * MIN_RATE_PER_KG
+            final_cost = max(round(cost), floor_cost)
+            
+            print(f"\n🚚 INDIVIDUAL COST CALCULATION:")
+            print(f"   Weight: {weight_kg}kg")
+            print(f"   Vehicle class: {v_class['name']}")
+            print(f"   Distance: {round(distance_km, 2)}km")
+            print(f"   Base fee: ₹{base_fee}")
+            print(f"   Fuel rate: ₹{fuel_per_km}/km")
+            print(f"   Driver wage rate: ₹{driver_per_km}/km")
+            print(f"   Calculated: {base_fee} + ({round(distance_km, 2)} × {fuel_per_km + driver_per_km}) = ₹{round(cost)}")
+            print(f"   Floor (₹3/kg): ₹{floor_cost}")
+            print(f"   Final individual cost: ₹{final_cost}")
+            
+            return final_cost
 
-    # Fallback: flat rate
-    return round(weight_kg * FALLBACK_RATE_PER_KG)
+    # Fallback when coordinates are missing or mandi is unmapped
+    fallback = round(weight_kg * FALLBACK_RATE_PER_KG)
+    print(f"\n⚠️  FALLBACK: No GPS/mandi, using ₹9/kg × {weight_kg}kg = ₹{fallback}")
+    return fallback

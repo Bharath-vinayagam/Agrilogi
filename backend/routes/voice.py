@@ -1,11 +1,11 @@
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 try:
-    import google.generativeai as genai
+    from groq import Groq as _GroqClient
 except ImportError:
-    genai = None
+    _GroqClient = None
 
 from database.db import supabase_client
 from database.seed_data import BOOKINGS
@@ -39,24 +39,33 @@ async def upload_voice(
     language: str = Form(...),
     demo_type: Optional[str] = Form(None),
     transcript_text: Optional[str] = Form(None),
+    farmer_name: Optional[str] = Form(None),
 ):
     transcript = await _resolve_transcript(audio_file, language, demo_type, transcript_text)
+    if not transcript or not transcript.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No speech detected. Please speak clearly into your microphone."
+        )
+
     lang_code = "ta" if language == "Tamil" else ("hi" if language == "Hindi" else "en")
     extraction_result = extract_from_transcript(ExtractionRequest(transcript=transcript, language=lang_code))
     extracted = extraction_result.extracted
     confidence = extraction_result.confidence
     review_required = any(int(value) < 70 for value in confidence.values())
 
-    booking_row = _build_booking_row(extracted, confidence, language, review_required)
-    saved_booking = _save_booking(booking_row)
+    # If farmer name wasn't detected from speech or is unknown, use the authenticated farmer name
+    if (not extracted.get("farmer_name") or extracted.get("farmer_name") == "Unknown Farmer") and farmer_name:
+        extracted["farmer_name"] = farmer_name
+        confidence["farmer_name"] = 95
 
     return {
-        "id": saved_booking["id"],
+        "id": None,
         "transcript": transcript,
         "extracted": extracted,
         "confidence": confidence,
         "review_required": review_required,
-        "booking": saved_booking,
+        "booking": None,
     }
 
 
@@ -69,6 +78,7 @@ async def _resolve_transcript(
     if transcript_text and transcript_text.strip():
         return transcript_text.strip()
 
+    # Only return demo transcripts if an explicit demo is triggered
     if demo_type == "ta":
         return "Naan Arumugam. Melma village la irukken. En kitta 400 kilo thakkali irukku."
     if demo_type == "hi":
@@ -76,29 +86,23 @@ async def _resolve_transcript(
     if demo_type == "en":
         return "Hello, I am Suresh from Athur village. I want to transport 350 kilograms of tomatoes."
 
-    if audio_file and settings.gemini_api_key and genai:
+    if audio_file and settings.groq_api_key and _GroqClient:
         try:
             audio_bytes = await audio_file.read()
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            prompt = (
-                f"Transcribe this audio clip. The speaker is speaking in {language}. "
-                "Output only the transcript text."
+            groq_client = _GroqClient(api_key=settings.groq_api_key)
+            transcription = groq_client.audio.transcriptions.create(
+                file=(audio_file.filename or "audio.webm", audio_bytes, audio_file.content_type or "audio/webm"),
+                model="whisper-large-v3",
+                language=("ta" if language == "Tamil" else ("hi" if language == "Hindi" else "en")),
+                response_format="text",
             )
-            response = model.generate_content(
-                [
-                    prompt,
-                    {"mime_type": audio_file.content_type or "audio/webm", "data": audio_bytes},
-                ]
-            )
-            return response.text.strip()
+            if transcription and transcription.strip():
+                return transcription.strip()
         except Exception as exc:
-            print(f"Transcription failed: {exc}. Using language-based fallback.")
+            print(f"Transcription failed: {exc}.")
 
-    if language == "Tamil":
-        return "Naan Arumugam. Melma village la irukken. En kitta 400 kilo thakkali irukku."
-    if language == "Hindi":
-        return "Main Ramesh hoon. Main Sevoor gaon se hoon. Mere paas 200 kilo baingan hai."
-    return "Hello, I am Suresh from Athur village. I want to transport 350 kilograms of tomatoes."
+    # For real user voice calls without speech, NEVER make up fake dummy data
+    return ""
 
 
 def _build_booking_row(extracted: dict, confidence: dict, language: str, review_required: bool) -> dict:
@@ -124,6 +128,7 @@ def _build_booking_row(extracted: dict, confidence: dict, language: str, review_
         "status": "Pending",
         "individual_cost": individual_cost,
         "shared_cost": individual_cost,
+        "route_pass": "unassigned",
         "pickup_time": "Awaiting cluster",
         "source": "Voice Call",
         "language": language,
