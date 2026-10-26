@@ -1171,6 +1171,51 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ---
 
+## 👥 Contributors
+
+This project was developed by a team of 3 talented developers:
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/Bharath-vinayagam">
+        <img src="https://github.com/Bharath-vinayagam.png" width="100px;" alt=""/>
+        <br />
+        <sub><b>Bharath Vinayagam</b></sub>
+      </a>
+      <br />
+      <sub>Full Stack Developer</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/teammate1">
+        <img src="https://avatars.githubusercontent.com/u/0?v=4" width="100px;" alt=""/>
+        <br />
+        <sub><b>Teammate 1</b></sub>
+      </a>
+      <br />
+      <sub>Backend Developer</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/teammate2">
+        <img src="https://avatars.githubusercontent.com/u/0?v=4" width="100px;" alt=""/>
+        <br />
+        <sub><b>Teammate 2</b></sub>
+      </a>
+      <br />
+      <sub>Frontend Developer</sub>
+    </td>
+  </tr>
+</table>
+
+### Team Contributions
+- **Bharath Vinayagam**: Project architecture, system integration, documentation
+- **Teammate 1**: Backend API development, ML algorithms, database design
+- **Teammate 2**: Frontend UI/UX, dashboard components, user experience
+
+*Built with ❤️ for Indian farmers*
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions! Here's how to get started:
