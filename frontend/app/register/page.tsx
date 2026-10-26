@@ -89,8 +89,8 @@ export default function RegisterPage() {
           throw new Error(`Farmers table insert failed: ${farmerError.message}`);
         }
       } else if (role === "driver") {
-        // Insert into drivers table
-        const { error: driverError } = await supabase
+        // Insert into drivers table and retrieve created driver ID
+        const { data: driverData, error: driverError } = await supabase
           .from("drivers")
           .insert({
             user_id: userId,
@@ -100,17 +100,30 @@ export default function RegisterPage() {
             reliability_score: 94,
             completed_trips: 0,
             rating: 4.8
-          });
+          })
+          .select()
+          .single();
 
         if (driverError) {
           throw new Error(`Drivers table insert failed: ${driverError.message}`);
         }
 
-        // Insert into vehicles table
+        // Insert into vehicles table with unified vehicle tier capacity linked to driver_id
+        let capacityKg = 1100;
+        const vLower = vehicleType.toLowerCase();
+        if (vLower.includes("mini") || vLower.includes("500")) {
+          capacityKg = 500;
+        } else if (vLower.includes("heavy") || vLower.includes("2500")) {
+          capacityKg = 2500;
+        } else {
+          capacityKg = 1100;
+        }
+
         const { error: vehicleError } = await supabase.from("vehicles").insert({
+          driver_id: driverData?.id ?? null,
           vehicle_number: vehicleNumber,
           vehicle_type: vehicleType,
-          capacity_kg: vehicleType.toLowerCase().includes("mini") ? 1500 : 1100
+          capacity_kg: capacityKg
         });
 
         if (vehicleError) {
@@ -320,9 +333,9 @@ export default function RegisterPage() {
                       onChange={(e) => setVehicleType(e.target.value)}
                       className="focus-ring block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-850 bg-white"
                     >
-                      <option value="Mini Truck">Mini Truck (1500 kg)</option>
-                      <option value="Pickup Van">Pickup Van (1100 kg)</option>
-                      <option value="Three Wheeler">Three Wheeler (800 kg)</option>
+                      <option value="Mini Truck">Mini Truck (500 kg)</option>
+                      <option value="Standard Truck">Standard Truck (1100 kg)</option>
+                      <option value="Heavy Truck">Heavy Truck (2500 kg)</option>
                     </select>
                   </div>
                   <div>

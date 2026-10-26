@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, CheckCircle2, IndianRupee, PackagePlus, Truck, Smartphone } from "lucide-react";
+import { CalendarClock, CheckCircle2, IndianRupee, PackagePlus, Truck, Smartphone, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/services/api";
 import { savingsTrend } from "@/services/demoData";
@@ -10,13 +10,50 @@ import { VoiceCallSimulator } from "@/components/VoiceCallSimulator";
 import { SavingsPanel } from "@/components/SavingsPanel";
 import { useAuth } from "@/hooks/useAuth";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+const SMS_TYPE_LABEL: Record<string, string> = {
+  cluster_created:  "📦 Cluster Ready",
+  bid_winner:       "🏆 Bid Won",
+  driver_assigned:  "🚚 Driver Assigned",
+  registration:     "✅ Registration",
+  login:            "🔑 Login",
+  order_confirmed:  "✅ Order Confirmed",
+  bundle_created:   "📦 Bundle Created",
+  trip_update:      "🛣️ Trip Update",
+  custom:           "📩 Message",
+};
+
+function smsLabel(type: string) {
+  return SMS_TYPE_LABEL[type] || "📩 Notification";
+}
+
 export function FarmerDashboard() {
   const [orders, setOrders] = useState<FarmerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<FarmerOrder | null>(null); // Track selected order
+  const [smsMessages, setSmsMessages] = useState<any[]>([]);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<FarmerOrder | null>(null);
   const [driverDetails, setDriverDetails] = useState<Driver | null>(null);
   const { user } = useAuth("farmer");
+
+  async function loadSmsMessages(phone: string) {
+    setSmsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/sms/notifications/${encodeURIComponent(phone)}`, {
+        cache: "no-store"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSmsMessages(data);
+      }
+    } catch (err) {
+      console.error("Failed to load SMS messages:", err);
+    } finally {
+      setSmsLoading(false);
+    }
+  }
 
   async function loadOrders() {
     try {
@@ -53,6 +90,7 @@ export function FarmerDashboard() {
   useEffect(() => {
     if (user?.phone) {
       loadOrders();
+      loadSmsMessages(user.phone);
     }
   }, [user]);
 
@@ -186,43 +224,55 @@ export function FarmerDashboard() {
                 <span className="inline-flex items-center gap-2 text-stone-600"><CalendarClock size={17} /> Pickup</span>
                 <strong>{assignedOrder.pickupTime}</strong>
               </p>
-              <p className="flex items-center justify-between rounded-lg bg-stone-50 p-3">
-                <span className="inline-flex items-center gap-2 text-stone-600"><IndianRupee size={17} /> Final Cost</span>
-                <strong>Rs {(assignedOrder.finalCost || assignedOrder.sharedCost).toLocaleString("en-IN")}</strong>
-              </p>
             </div>
           ) : (
             <p className="mt-4 text-sm text-stone-500">No driver assigned yet.</p>
           )}
         </section>
 
-        {/* Simulated SMS Delivery */}
+        {/* SMS Messages */}
         <section className="rounded-lg border border-stone-200 bg-white p-5 shadow-panel">
-          <div className="flex items-center gap-2 mb-3">
-            <Smartphone className="text-river" size={20} />
-            <h2 className="text-lg font-bold text-soil">Simulated SMS Delivery</h2>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Smartphone className="text-river" size={20} />
+              <h2 className="text-lg font-bold text-soil">SMS Messages</h2>
+            </div>
+            <button
+              onClick={() => user?.phone && loadSmsMessages(user.phone)}
+              className="text-xs text-stone-400 hover:text-soil flex items-center gap-1 transition-colors"
+            >
+              <RefreshCw size={12} />
+              Refresh
+            </button>
           </div>
-          <p className="text-xs text-stone-500 mb-4">
-            Simulates notifications delivered to farmers via SMS immediately after calling the helpline.
-          </p>
           <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-            {notifications.length === 0 ? (
+            {smsLoading ? (
+              <p className="text-xs text-stone-400 italic text-center py-6 animate-pulse">Loading messages...</p>
+            ) : smsMessages.length === 0 ? (
               <p className="text-xs text-stone-400 italic text-center py-6">
-                No SMS received yet. Run a Tamil/Hindi/English voice booking to simulate SMS delivery.
+                No SMS messages yet. Messages will appear here after clustering or driver assignment.
               </p>
             ) : (
-              notifications.map((notif, index) => (
-                <div key={index} className="rounded-lg border border-stone-200 bg-stone-50 p-3 relative shadow-sm hover:border-river/30 transition-all">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-stone-400">
-                    <span>FROM: AGRILOGI</span>
-                    <span>{notif.timestamp}</span>
+              smsMessages.map((sms: any) => (
+                <div key={sms.id} className="rounded-lg border border-stone-200 bg-stone-50 p-3 shadow-sm hover:border-river/30 transition-all">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-bold text-river">{smsLabel(sms.type)}</span>
+                    <span className="text-[10px] text-stone-400">
+                      {sms.created_at ? new Date(sms.created_at).toLocaleString("en-IN", {
+                        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
+                      }) : "—"}
+                    </span>
                   </div>
-                  <div className="mt-1.5 text-xs text-stone-700 space-y-1 font-mono">
-                    <p className="font-bold text-river uppercase">Booking Confirmed</p>
-                    <p><span className="text-stone-500">ID:</span> {notif.id}</p>
-                    <p><span className="text-stone-500">Crop:</span> {notif.crop}</p>
-                    <p><span className="text-stone-500">Weight:</span> {notif.weightKg} kg</p>
-                    <p><span className="text-stone-500">Village:</span> {notif.village}</p>
+                  <p className="text-xs text-stone-700 font-mono whitespace-pre-wrap leading-relaxed">{sms.message}</p>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <span className="text-[10px] text-stone-400">To: {sms.phone}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      sms.status === "sent" ? "bg-field/10 text-field" :
+                      sms.status === "failed" ? "bg-chilli/10 text-chilli" :
+                      "bg-harvest/10 text-harvest"
+                    }`}>
+                      {sms.status === "sent" ? "✓ Sent" : sms.status === "failed" ? "✗ Failed" : "⏳ Queued"}
+                    </span>
                   </div>
                 </div>
               ))

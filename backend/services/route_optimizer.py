@@ -104,13 +104,16 @@ def optimize_route(
                 "quantity_kg": farmer["quantity_kg"],
             }
 
-        route_steps.append(step)
-        seq += 1
-
+        leg_km = 0.0
         if step_idx > 0:
             prev = ordered_nodes[step_idx - 1]
             total_dist_m += distance_matrix[prev][node]
             total_dur_s  += duration_matrix[prev][node]
+            leg_km = round(distance_matrix[prev][node] / 1000.0, 3)
+
+        step["leg_km"] = leg_km
+        route_steps.append(step)
+        seq += 1
 
     return {
         "route":               route_steps,
@@ -118,6 +121,35 @@ def optimize_route(
         "total_duration_s":    total_dur_s,
         "total_load_kg":       total_demand,
         "vehicle_capacity_kg": capacity,
+    }
+
+
+def individual_trips_baseline(
+    farmers: List[Dict],
+    duration_matrix: List[List[float]],
+    distance_matrix: List[List[float]],
+) -> Dict:
+    """
+    Calculate baseline as unbundled individual direct trips.
+    Each farmer makes an independent round-trip between Mandi and their farm:
+    Mandi -> Farmer_i -> Mandi (the real-world baseline before KrishiBundle consolidation).
+    Distinct farm locations are counted to avoid double-counting same-farmer orders.
+    """
+    total_dist_m = 0.0
+    total_dur_s  = 0.0
+    seen_locations = set()
+
+    for i, farmer in enumerate(farmers, start=1):
+        loc_key = (round(farmer["latitude"], 4), round(farmer["longitude"], 4))
+        if loc_key in seen_locations:
+            continue
+        seen_locations.add(loc_key)
+        total_dist_m += distance_matrix[0][i] + distance_matrix[i][0]
+        total_dur_s  += duration_matrix[0][i] + duration_matrix[i][0]
+
+    return {
+        "total_distance_m": total_dist_m,
+        "total_duration_s": total_dur_s,
     }
 
 
@@ -169,3 +201,4 @@ def baseline_route(
         "total_distance_m": total_dist_m,
         "total_duration_s": total_dur_s,
     }
+

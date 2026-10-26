@@ -1,5 +1,7 @@
 from database.db import supabase_client
 from services.clustering_service import next_slot_time, slot_label
+from services.order_status import ACTIVE_STATUSES
+from services.rate_config import get_vehicle_class_for_weight
 
 TRUCK_CAPACITY_KG = 1100  # Standard cooperative truck capacity
 
@@ -17,7 +19,7 @@ def generate_recommendation() -> dict:
     try:
         # Only count active orders (not completed/cancelled)
         response = supabase_client.table("orders").select("*").in_(
-            "status", ["Pending", "Cluster Forming", "Driver Assigned", "In Transit"]
+            "status", ACTIVE_STATUSES
         ).execute()
         orders = response.data
 

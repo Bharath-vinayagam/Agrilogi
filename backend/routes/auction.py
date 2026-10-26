@@ -15,3 +15,13 @@ def bids():
 def submit_bid(payload: BidCreate):
     return create_bid(payload)
 
+
+@router.post("/bids/{bid_id}/accept")
+def accept_bid(bid_id: str):
+    from services.auction_service import on_bid_accepted
+    res = on_bid_accepted(bid_id)
+    if not res.get("success"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to accept bid"))
+    return res
+

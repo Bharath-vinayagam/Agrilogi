@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Agrilogi Audio Files</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .audio-item {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        .status {
+            margin-top: 5px;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .test-all {
+            background: #2196F3;
+            width: 100%;
+            margin-top: 20px;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .test-all:hover {
+            background: #0b7dda;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Agrilogi Audio Test</h1>
+        
+        <div class="audio-item">
+            <div>
+                <strong>1. Welcome (English)</strong>
+                <div class="status" id="status-1">Ready to play</div>
+            </div>
+            <button onclick="playAudio('welcome.mp3', 1)">▶️ Play</button>
+        </div>
+
+        <div class="audio-item">
+            <div>
+                <strong>2. Tamil Prompt</strong>
+                <div class="status" id="status-2">Ready to play</div>
+            </div>
+            <button onclick="playAudio('tamil-prompt.mp3', 2)">▶️ Play</button>
+        </div>
+
+        <div class="audio-item">
+            <div>
+                <strong>3. Hindi Prompt</strong>
+                <div class="status" id="status-3">Ready to play</div>
+            </div>
+            <button onclick="playAudio('hindi-prompt.mp3', 3)">▶️ Play</button>
+        </div>
+
+        <div class="audio-item">
+            <div>
+                <strong>4. English Prompt</strong>
+                <div class="status" id="status-4">Ready to play</div>
+            </div>
+            <button onclick="playAudio('english-prompt.mp3', 4)">▶️ Play</button>
+        </div>
+
+        <button class="test-all" onclick="playAllSequentially()">
+            🔊 Test All Sequentially (Like Real Call)
+        </button>
+    </div>
+
+    <script>
+        function playAudio(filename, id) {
+            const audio = new Audio(`/audio/${filename}`);
+            const statusEl = document.getElementById(`status-${id}`);
+            
+            statusEl.innerHTML = '🔊 Playing...';
+            statusEl.className = 'status';
+            
+            audio.onended = () => {
+                statusEl.innerHTML = '✅ Completed';
+                statusEl.className = 'status success';
+            };
+            
+            audio.onerror = () => {
+                statusEl.innerHTML = '❌ Error loading file';
+                statusEl.className = 'status error';
+            };
+            
+            audio.play().catch(err => {
+                statusEl.innerHTML = '❌ Playback failed';
+                statusEl.className = 'status error';
+            });
+        }
+
+        function playAllSequentially() {
+            const files = [
+                { name: 'welcome.mp3', id: 1 },
+                { name: 'tamil-prompt.mp3', id: 2 },
+                { name: 'hindi-prompt.mp3', id: 3 },
+                { name: 'english-prompt.mp3', id: 4 }
+            ];
+            
+            function playNext(index) {
+                if (index >= files.length) {
+                    console.log('✅ All audio files played successfully!');
+                    return;
+                }
+                
+                const file = files[index];
+                const audio = new Audio(`/audio/${file.name}`);
+                const statusEl = document.getElementById(`status-${file.id}`);
+                
+                statusEl.innerHTML = '🔊 Playing...';
+                statusEl.className = 'status';
+                
+                audio.onended = () => {
+                    statusEl.innerHTML = '✅ Completed';
+                    statusEl.className = 'status success';
+                    setTimeout(() => playNext(index + 1), 500);
+                };
+                
+                audio.onerror = () => {
+                    statusEl.innerHTML = '❌ Error';
+                    statusEl.className = 'status error';
+                    setTimeout(() => playNext(index + 1), 500);
+                };
+                
+                audio.play();
+            }
+            
+            playNext(0);
+        }
+    </script>
+</body>
+</html>

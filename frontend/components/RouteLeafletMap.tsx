@@ -13,7 +13,7 @@ interface RouteStep {
 
 interface RouteLeafletMapProps {
   route: RouteStep[];
-  geometry: {
+  geometry?: {
     type: string;
     coordinates: [number, number][];
   };
@@ -24,10 +24,22 @@ export function RouteLeafletMap({ route, geometry }: RouteLeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    let isMounted = true;
+    if (!containerRef.current) return;
 
     // Dynamically import Leaflet (SSR safe)
     import("leaflet").then((L) => {
+      if (!isMounted || !containerRef.current) return;
+
+      // If container already has an active map or leaflet id, destroy it first
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      if ((containerRef.current as any)._leaflet_id) {
+        delete (containerRef.current as any)._leaflet_id;
+      }
+
       // Fix default icon paths broken by webpack
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
@@ -36,28 +48,35 @@ export function RouteLeafletMap({ route, geometry }: RouteLeafletMapProps) {
         shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      const map = L.map(containerRef.current!).setView(
-        [route[0]?.latitude ?? 12.9, route[0]?.longitude ?? 79.1],
-        11
-      );
+      const initialLat = route[0]?.latitude ?? 12.9;
+      const initialLng = route[0]?.longitude ?? 79.1;
+      const map = L.map(containerRef.current).setView([initialLat, initialLng], 11);
       mapRef.current = map;
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(map);
 
-      // Draw OSRM road geometry
-      const polylineCoords = geometry.coordinates.map(
-        ([lng, lat]) => [lat, lng] as [number, number]
-      );
-      const polyline = L.polyline(polylineCoords, {
-        color: "#2f7f8f",
-        weight: 4,
-        opacity: 0.85,
-      }).addTo(map);
+      // Draw OSRM road geometry if available
+      const rawCoords = geometry?.coordinates ?? [];
+      const polylineCoords: [number, number][] =
+        rawCoords.length > 0
+          ? rawCoords.map(([lng, lat]) => [lat, lng] as [number, number])
+          : route.map((s) => [s.latitude, s.longitude] as [number, number]);
 
-      // Fit map to route
-      map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+      if (polylineCoords.length > 0) {
+        const polyline = L.polyline(polylineCoords, {
+          color: "#2f7f8f",
+          weight: 4,
+          opacity: 0.85,
+        }).addTo(map);
+
+        try {
+          map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+        } catch {
+          // fallback if bounds are 0-sized
+        }
+      }
 
       // Add numbered markers for each stop
       route.forEach((step) => {
@@ -80,17 +99,26 @@ export function RouteLeafletMap({ route, geometry }: RouteLeafletMapProps) {
       });
     });
 
-    // Add Leaflet CSS
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
+    // Ensure Leaflet stylesheet is injected once
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
 
     return () => {
-      mapRef.current?.remove();
-      mapRef.current = null;
+      isMounted = false;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      if (containerRef.current) {
+        delete (containerRef.current as any)._leaflet_id;
+      }
     };
-  }, []);
+  }, [route, geometry]);
 
   return (
     <div

@@ -19,6 +19,7 @@ MARKET_ALIASES: dict[str, list[str]] = {
         "koyambedu", "koyambedu mandi", "koyambedu market",
         "koyambedu mandi, chennai", "koyambedu mandi chennai",
         "koyambedu vegetable market", "cmda market koyambedu",
+        "chennai", "சென்னை", "கோயம்பேடு", "கோயம்பேடு மார்க்கெட்", "கோயம்பேடு மண்டி",
     ],
     "Madurai Mandi": [
         "madurai mandi", "madurai market", "madurai vegetable market",

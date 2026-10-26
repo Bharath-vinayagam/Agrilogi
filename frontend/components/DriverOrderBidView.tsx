@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Calendar, Clock, Package, Scale, MapPin, IndianRupee, AlertCircle, CheckCircle } from "lucide-react";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
 interface Order {
   id: string;
   farmer_name: string;
@@ -86,7 +88,7 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
   async function loadTimeline() {
     try {
       const driverName = user.name || "Driver";
-      const response = await fetch(`http://localhost:8000/api/bids/capacity/timeline/${encodeURIComponent(driverName)}`);
+      const response = await fetch(`${API_BASE}/api/bids/capacity/timeline/${encodeURIComponent(driverName)}`);
       const data = await response.json();
       setTimeline(data);
     } catch (err) {
@@ -97,7 +99,7 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
   async function loadCapacityInfo() {
     try {
       const driverName = user.name || "Driver";
-      const response = await fetch(`http://localhost:8000/api/bids/capacity/${encodeURIComponent(driverName)}`);
+      const response = await fetch(`${API_BASE}/api/bids/capacity/${encodeURIComponent(driverName)}`);
       const data = await response.json();
       setCapacityInfo(data);
     } catch (err) {
@@ -108,7 +110,7 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
   async function loadAvailableOrders() {
     try {
       // Get all pending orders with time slots
-      const response = await fetch("http://localhost:8000/api/bookings");
+      const response = await fetch(`${API_BASE}/api/bookings`);
       const data = await response.json();
       
       // Filter only Pending/Cluster Forming orders with time slots
@@ -127,7 +129,7 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
 
   async function loadOrderBids(orderId: string) {
     try {
-      const response = await fetch(`http://localhost:8000/api/bids/order/${orderId}`);
+      const response = await fetch(`${API_BASE}/api/bids/order/${orderId}`);
       const data = await response.json();
       setOrderBids(data);
     } catch (err) {
@@ -147,6 +149,11 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
   async function handlePlaceBid() {
     if (!selectedOrder || !bidAmount) {
       setBidError("Please enter a bid amount");
+      return;
+    }
+
+    if (isSlotClosed(selectedOrder.pickup_date, selectedOrder.pickup_slot)) {
+      setBidError("Bidding has closed for this time slot. New bids are no longer accepted.");
       return;
     }
 
@@ -170,7 +177,7 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
         reliability_score: Math.round(user.reliabilityScore || 94)
       };
 
-      const response = await fetch("http://localhost:8000/api/bids/order", {
+      const response = await fetch(`${API_BASE}/api/bids/order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -219,6 +226,40 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
     }
   }
 
+  function getClosingDateTime(pickupDate: string, pickupSlot: string): Date | null {
+    try {
+      const parts = pickupDate.split("-");
+      if (parts.length !== 3) return null;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const date = new Date(year, month, day);
+
+      if (pickupSlot === "morning") {
+        // Morning closes at 8:00 PM (20:00) previous day
+        date.setDate(date.getDate() - 1);
+        date.setHours(20, 0, 0, 0);
+      } else if (pickupSlot === "afternoon") {
+        // Afternoon closes at 10:00 AM same day
+        date.setHours(10, 0, 0, 0);
+      } else if (pickupSlot === "evening") {
+        // Evening closes at 3:00 PM (15:00) same day
+        date.setHours(15, 0, 0, 0);
+      } else {
+        return null;
+      }
+      return date;
+    } catch {
+      return null;
+    }
+  }
+
+  function isSlotClosed(pickupDate: string, pickupSlot: string): boolean {
+    const closingTime = getClosingDateTime(pickupDate, pickupSlot);
+    if (!closingTime) return false;
+    return new Date() >= closingTime;
+  }
+
   function getClosingTime(pickupDate: string, pickupSlot: string) {
     // Calculate when bidding closes (end of previous slot)
     const slotTimes: Record<string, { prev: string; prevEnd: string }> = {
@@ -230,15 +271,25 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
     const info = slotTimes[pickupSlot];
     if (!info) return null;
 
-    const date = new Date(pickupDate);
-    
-    if (pickupSlot === "morning") {
-      // Morning closes at 8 PM previous day
-      date.setDate(date.getDate() - 1);
-      return `${formatDate(date.toISOString().split('T')[0])} ${info.prevEnd}`;
-    } else {
-      // Afternoon/Evening close same day
-      return `${formatDate(pickupDate)} ${info.prevEnd}`;
+    try {
+      const parts = pickupDate.split("-");
+      if (parts.length !== 3) return null;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const date = new Date(year, month, day);
+
+      if (pickupSlot === "morning") {
+        // Morning closes at 8 PM previous day
+        date.setDate(date.getDate() - 1);
+        const prevDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        return `${formatDate(prevDateStr)} ${info.prevEnd}`;
+      } else {
+        // Afternoon/Evening close same day
+        return `${formatDate(pickupDate)} ${info.prevEnd}`;
+      }
+    } catch {
+      return `${pickupDate} ${info.prevEnd}`;
     }
   }
 
@@ -438,15 +489,24 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
             <span className="text-sm text-stone-500">• {date}</span>
           </div>
 
-          {Object.entries(slotGroups).map(([slot, slotOrders]) => (
+          {Object.entries(slotGroups).map(([slot, slotOrders]) => {
+            const slotClosed = isSlotClosed(date, slot);
+            return (
             <div key={`${date}-${slot}`} className="rounded-xl border border-stone-200 bg-white p-4">
               <div className="mb-3 flex items-center gap-2">
                 <span className="text-2xl">{SLOT_EMOJI[slot]}</span>
                 <div className="flex-1">
-                  <p className="font-bold capitalize text-soil">{slot}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold capitalize text-soil">{slot}</p>
+                    {slotClosed && (
+                      <span className="rounded-full bg-red-100 border border-red-200 px-2 py-0.5 text-xs font-bold text-red-700">
+                        🔴 Bidding Closed
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-stone-500">{SLOT_TIME[slot]}</p>
-                  <p className="text-xs text-red-600 font-semibold mt-1">
-                    ⏰ Closes: {getClosingTime(date, slot)}
+                  <p className={`text-xs font-semibold mt-1 ${slotClosed ? "text-stone-500" : "text-red-600"}`}>
+                    {slotClosed ? `Closed: ${getClosingTime(date, slot)}` : `⏰ Closes: ${getClosingTime(date, slot)}`}
                   </p>
                 </div>
                 <span className="ml-auto rounded-full bg-soil/10 px-3 py-1 text-xs font-bold text-soil">
@@ -474,6 +534,11 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
                               Flexible
                             </span>
                           )}
+                          {slotClosed && (
+                            <span className="rounded-full bg-stone-200 text-stone-700 px-2 py-0.5 text-xs font-semibold">
+                              Closed
+                            </span>
+                          )}
                         </div>
                         <p className="mt-1 text-sm text-stone-600">
                           <strong>{order.crop}</strong> • {order.weight_kg} kg
@@ -495,7 +560,8 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
 
@@ -532,8 +598,15 @@ export function DriverOrderBidView({ user }: DriverOrderBidViewProps) {
             </div>
           </div>
 
-          {/* Bid Input - Only show if haven't bid yet */}
-          {!hasAlreadyBid && (
+          {/* Bid Input - Only show if slot is open and haven't bid yet */}
+          {selectedOrder && isSlotClosed(selectedOrder.pickup_date, selectedOrder.pickup_slot) ? (
+            <div className="mb-4 rounded-lg bg-stone-100 border border-stone-200 px-4 py-3 text-center">
+              <p className="font-bold text-stone-700">🔒 Bidding Closed</p>
+              <p className="text-sm text-stone-500 mt-1">
+                Bidding for this slot closed at {getClosingTime(selectedOrder.pickup_date, selectedOrder.pickup_slot)}. New bids can no longer be placed.
+              </p>
+            </div>
+          ) : !hasAlreadyBid && (
             <div className="mb-4 space-y-3">
               <div className="flex gap-3">
                 <input

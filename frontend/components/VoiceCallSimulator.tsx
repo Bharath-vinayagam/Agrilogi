@@ -130,17 +130,6 @@ export function VoiceCallSimulator({ onBookingCreated, onNewNotification, farmer
     }
   }
 
-  function getLanguageCode(language: Language) {
-    switch (language) {
-      case "Tamil":
-        return "ta-IN";
-      case "Hindi":
-        return "hi-IN";
-      default:
-        return "en-IN";
-    }
-  }
-
   function getLanguagePrompt(language: Language, name: string) {
     switch (language) {
       case "Tamil":
@@ -388,27 +377,26 @@ export function VoiceCallSimulator({ onBookingCreated, onNewNotification, farmer
     stopAllAudio();
     
     setSelectedLanguage(lang);
-    setStatusText(`Language selected: ${lang}`);
+    setStatusText(`Listening in ${lang}... Speak now`);
     setCallState("RECORDING");
     
-    // Play pre-recorded greeting audio file for PERFECT female voice!
+    // Start recording and speech recognition immediately
+    startRecording(lang);
+
+    // Play greeting prompt
     const audioFile = lang === "Tamil" ? "tamil-greeting.mp3" : 
                       lang === "Hindi" ? "hindi-greeting.mp3" : 
                       "english-greeting.mp3";
     
     console.log(`🎵 Playing personalized greeting: ${audioFile}`);
-    
-    playAudio(audioFile, () => {
-      setStatusText("Listening...");
-      startRecording(lang);
-    });
+    playAudio(audioFile);
   }
 
   async function startRecording(language: Language) {
     liveTranscriptRef.current = "";
     setTranscript("");
     setCallState("RECORDING");
-    setStatusText("Listening...");
+    setStatusText("Listening... (Speak your crop, weight, and village)");
     startRecordingTimer();
     startSpeechRecognition(language);
 
@@ -516,15 +504,27 @@ export function VoiceCallSimulator({ onBookingCreated, onNewNotification, farmer
   }
 
   async function processUpload(formData: FormData, language: Language) {
-    setCallState("AI_PROCESSING");
-    setStatusText("Processing with AI...");
-    const res = await api.uploadVoice(formData);
-    if (!res) {
+    const bestTranscript = (liveTranscriptRef.current || transcript).trim();
+    if (!bestTranscript && (!audioChunksRef.current || audioChunksRef.current.length === 0)) {
       setCallState("IDLE");
-      setStatusText("Processing failed. Please try again.");
+      setStatusText("⚠️ No speech detected. Please speak clearly into your microphone.");
       return;
     }
-    handleCallSuccess(res, language);
+
+    setCallState("AI_PROCESSING");
+    setStatusText("Processing speech with AI...");
+    try {
+      const res = await api.uploadVoice(formData);
+      if (!res || !res.extracted) {
+        setCallState("IDLE");
+        setStatusText("⚠️ Could not recognize speech. Please try speaking again.");
+        return;
+      }
+      handleCallSuccess(res, language);
+    } catch (err: any) {
+      setCallState("IDLE");
+      setStatusText(err?.message || "⚠️ No speech detected. Please speak into your microphone and try again.");
+    }
   }
 
   function handleCallSuccess(res: any, language: Language) {
@@ -544,14 +544,25 @@ export function VoiceCallSimulator({ onBookingCreated, onNewNotification, farmer
   }
 
   async function createBookingWithExtractedData(res: any, language: Language) {
-    // Create booking with date and slot that were selected at the beginning
+    // Only use extracted name if not "Unknown Farmer" and not default Suresh
+    const resolvedFarmer = (res.extracted?.farmer_name && res.extracted.farmer_name !== "Unknown Farmer" && res.extracted.farmer_name !== "Suresh")
+      ? res.extracted.farmer_name
+      : farmerName;
+
+    const resolvedWeight = Number(res.extracted?.weight) || 0;
+    if (resolvedWeight <= 0) {
+      setCallState("IDLE");
+      setStatusText("⚠️ Could not detect crop weight. Please speak weight (e.g. 250 kg).");
+      return;
+    }
+
     const payload = {
-      farmer_name: res.extracted.farmer_name || farmerName,
-      phone: res.extracted.phone || "+91 90000 00000",
-      village: res.extracted.source_village || res.extracted.village || "Unknown Village",
-      crop: res.extracted.crop || "Unknown Crop",
-      weight_kg: res.extracted.weight || 0,
-      destination: res.extracted.destination_village || "Koyambedu Mandi",
+      farmer_name: resolvedFarmer,
+      phone: res.extracted?.phone || "+91 90000 00000",
+      village: res.extracted?.source_village || res.extracted?.village || "Unknown Village",
+      crop: res.extracted?.crop || "Unknown Crop",
+      weight_kg: resolvedWeight,
+      destination: res.extracted?.destination_village || "Koyambedu Mandi",
       pickup_date: selectedDate,
       pickup_slot: selectedSlot,
       is_time_flexible: isTimeFlexible,
@@ -669,6 +680,12 @@ export function VoiceCallSimulator({ onBookingCreated, onNewNotification, farmer
                 </div>
                 <p className="text-3xl font-black tracking-wide text-white">{formatTime(recordingSeconds)}</p>
                 <p className="text-[11px] font-bold text-harvest">{selectedLanguage} helpline mode</p>
+                <div className="mt-2 rounded-lg bg-stone-800/80 p-2 text-left border border-stone-700">
+                  <p className="text-[9px] uppercase font-bold text-stone-400">🎙️ Spoken Words Heard:</p>
+                  <p className="mt-0.5 text-xs text-emerald-400 font-mono italic break-words">
+                    {transcript || "Listening for speech... (speak your crop, weight & village)"}
+                  </p>
+                </div>
               </div>
             )}
 

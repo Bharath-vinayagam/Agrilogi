@@ -9,25 +9,32 @@ from database.db import supabase_client
 
 def get_driver_capacity(driver_name: str) -> Optional[int]:
     """
-    Get driver's vehicle capacity in kg from users table.
+    Get driver's vehicle capacity in kg from vehicles table via drivers join.
     Returns None if not found.
     """
     if not supabase_client:
         return None
     
     try:
-        response = supabase_client.table("users").select("vehicle_capacity, vehicle_type").eq("name", driver_name).eq("role", "driver").execute()
-        
-        if response.data and len(response.data) > 0:
-            capacity = response.data[0].get("vehicle_capacity")
-            # If not set, estimate based on vehicle type
-            if not capacity:
-                vehicle_type = response.data[0].get("vehicle_type", "").lower()
-                capacity = estimate_capacity_by_vehicle(vehicle_type)
-            return capacity
-        
-        return None
-        
+        # Join users -> drivers -> vehicles to get capacity
+        user_resp = supabase_client.table("users").select("id").eq("name", driver_name).eq("role", "driver").execute()
+        if not user_resp.data:
+            return None
+        user_id = user_resp.data[0]["id"]
+
+        driver_resp = supabase_client.table("drivers").select("id, vehicle_type").eq("user_id", user_id).execute()
+        if not driver_resp.data:
+            return None
+        driver_id = driver_resp.data[0]["id"]
+        vehicle_type = driver_resp.data[0].get("vehicle_type", "")
+
+        vehicle_resp = supabase_client.table("vehicles").select("capacity_kg").eq("driver_id", driver_id).execute()
+        if vehicle_resp.data:
+            return int(vehicle_resp.data[0]["capacity_kg"])
+
+        # Fallback: estimate from vehicle_type in drivers table
+        return estimate_capacity_by_vehicle(vehicle_type.lower())
+
     except Exception as e:
         print(f"Error getting driver capacity: {e}")
         return None

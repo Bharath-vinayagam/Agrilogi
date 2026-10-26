@@ -59,7 +59,10 @@ def list_bookings(phone: str = None, farmer_id: str = None, pickup_date: str = N
                 confidence=row.get("confidence", None),
                 review_required=row.get("review_required", False),
                 assigned_driver=row.get("assigned_driver"),
-                final_cost=row.get("final_cost")
+                final_cost=row.get("final_cost"),
+                route_pass=row.get("route_pass", "unassigned"),
+                route_leg_km=row.get("route_leg_km"),
+                assigned_vehicle_capacity_kg=row.get("assigned_vehicle_capacity_kg")
             ))
         return bookings
     except Exception as e:
@@ -127,27 +130,56 @@ def create_booking(payload: BookingCreate):
     if not supabase_client:
         raise HTTPException(status_code=500, detail="Database client not configured")
     try:
-        # Fetch total count of bookings to generate ID
-        count_response = supabase_client.table("orders").select("id", count="exact").execute()
-        total_count = count_response.count if count_response.count is not None else 0
-        booking_id = f"KB{1024 + total_count}"
+        print(f"📝 Creating booking for phone: {payload.phone}, farmer: {payload.farmer_name}")
+        
+        # Generate unique ID by finding the highest existing KB number
+        # This prevents duplicate key errors when orders are deleted
+        all_orders = supabase_client.table("orders").select("id").execute()
+        if all_orders.data:
+            # Extract numeric parts from KB IDs (e.g., "KB1024" -> 1024)
+            kb_numbers = []
+            for order in all_orders.data:
+                order_id = order.get("id", "")
+                if order_id.startswith("KB"):
+                    try:
+                        kb_numbers.append(int(order_id[2:]))
+                    except ValueError:
+                        continue
+            
+            # Use max + 1, or start at 1024 if no orders exist
+            next_number = max(kb_numbers) + 1 if kb_numbers else 1024
+        else:
+            next_number = 1024
+            
+        booking_id = f"KB{next_number}"
+        print(f"✅ Generated booking ID: {booking_id}")
         
         # Check if a user with this phone exists, otherwise create one
+        print(f"🔍 Checking if user exists with phone: {payload.phone}")
         user_response = supabase_client.table("users").select("id").eq("phone", payload.phone).execute()
         if user_response.data:
             farmer_id = user_response.data[0]["id"]
+            print(f"✅ User found with ID: {farmer_id}")
         else:
+            print(f"👤 Creating new user for phone: {payload.phone}")
             new_user = {
                 "name": payload.farmer_name,
                 "phone": payload.phone,
                 "village": payload.village,
                 "role": "farmer"
             }
-            ins_user = supabase_client.table("users").insert(new_user).execute()
-            farmer_id = ins_user.data[0]["id"]
+            try:
+                ins_user = supabase_client.table("users").insert(new_user).execute()
+                farmer_id = ins_user.data[0]["id"]
+                print(f"✅ New user created with ID: {farmer_id}")
+            except Exception as user_err:
+                print(f"❌ User creation failed: {user_err}")
+                raise HTTPException(status_code=500, detail=f"Failed to create user: {str(user_err)}")
  
         # Geocode the village to lat/lng
+        print(f"🌍 Geocoding village: {payload.village}")
         lat, lng = geocode_village(payload.village)
+        print(f"✅ Geocoded to: ({lat}, {lng})")
         
         # Calculate pickup time display
         pickup_time_str = "Awaiting cluster"
@@ -168,8 +200,16 @@ def create_booking(payload: BookingCreate):
             pickup_time_str = f"{payload.pickup_date.strftime('%b %d')} {start_time}-{end_time} ({flexibility})"
 
         # Calculate individual cost based on real distance to mandi
+        print(f"💰 Calculating cost for {payload.weight_kg}kg to {payload.destination}")
         normalized_dest = normalize_destination(payload.destination)
         individual_cost = calculate_individual_cost(payload.weight_kg, lat, lng, normalized_dest)
+        print(f"✅ Individual cost calculated: ₹{individual_cost}")
+        
+        # Determine required vehicle capacity for this order
+        from services.rate_config import get_vehicle_class_for_weight
+        vehicle_class = get_vehicle_class_for_weight(payload.weight_kg)
+        required_capacity = vehicle_class["capacity_kg"]
+        print(f"🚛 Vehicle class: {vehicle_class['name']} (capacity: {required_capacity}kg)")
 
         booking_row = {
             "id": booking_id,
@@ -182,7 +222,8 @@ def create_booking(payload: BookingCreate):
             "destination": normalized_dest,
             "status": "Pending",
             "individual_cost": individual_cost,
-            "shared_cost": round(payload.weight_kg * 3.5),
+            "shared_cost": individual_cost,
+            "route_pass": "unassigned",
             "pickup_time": pickup_time_str if payload.pickup_date and payload.pickup_slot else "Awaiting cluster",
             "pickup_date": payload.pickup_date.isoformat() if payload.pickup_date else None,
             "pickup_slot": payload.pickup_slot,
@@ -193,9 +234,12 @@ def create_booking(payload: BookingCreate):
             "review_required": False,
             "lat": lat,
             "lng": lng,
+            "assigned_vehicle_capacity_kg": required_capacity,  # Store required vehicle capacity
         }
         
+        print(f"💾 Inserting order {booking_id} into database...")
         insert_response = supabase_client.table("orders").insert(booking_row).execute()
+        print(f"✅ Order {booking_id} inserted successfully!")
         # Trigger notification
         booking_confirmation(payload, booking_id)
         
@@ -220,13 +264,18 @@ def create_booking(payload: BookingCreate):
             confidence=row.get("confidence", None),
             review_required=row.get("review_required", False),
             assigned_driver=row.get("assigned_driver"),
-            final_cost=row.get("final_cost")
+            final_cost=row.get("final_cost"),
+            route_pass=row.get("route_pass", "unassigned"),
+            route_leg_km=row.get("route_leg_km"),
+            assigned_vehicle_capacity_kg=row.get("assigned_vehicle_capacity_kg")
         )
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error creating booking in Supabase: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ ERROR creating booking: {type(e).__name__}: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to create booking: {str(e)}")
 
 
 @router.put("/{booking_id}", response_model=Booking)
@@ -254,6 +303,7 @@ def update_booking(booking_id: str, payload: BookingCreate):
             "destination": normalized_dest,
             "individual_cost": individual_cost,
             "shared_cost": shared_cost,
+            "route_pass": "unassigned",
             "review_required": False,
             "lat": lat,
             "lng": lng,
@@ -281,7 +331,10 @@ def update_booking(booking_id: str, payload: BookingCreate):
             confidence=row.get("confidence", None),
             review_required=row.get("review_required", False),
             assigned_driver=row.get("assigned_driver"),
-            final_cost=row.get("final_cost")
+            final_cost=row.get("final_cost"),
+            route_pass=row.get("route_pass", "unassigned"),
+            route_leg_km=row.get("route_leg_km"),
+            assigned_vehicle_capacity_kg=row.get("assigned_vehicle_capacity_kg")
         )
     except Exception as e:
         print(f"Error updating booking: {e}")

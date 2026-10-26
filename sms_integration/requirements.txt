@@ -1,0 +1,14 @@
+# SMS Integration Requirements
+# Install with: pip install -r requirements.txt
+
+# Twilio SMS API
+twilio>=8.2.0
+
+# Database
+supabase>=1.0.3
+
+# Python standard library (already included)
+# - sys
+# - os
+# - typing
+# - datetime

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 
-OrderStatus = Literal["Pending", "Cluster Forming", "Driver Assigned", "In Transit", "Completed"]
+OrderStatus = Literal["Pending", "Cluster Forming", "Driver Assigned", "In Transit", "Completed", "Bidding Closed", "Expired"]
 TimeSlot = Literal["morning", "afternoon", "evening"]
 
 
@@ -32,6 +32,9 @@ class Booking(BookingCreate):
     review_required: bool = False
     assigned_driver: Optional[str] = None
     final_cost: Optional[int] = None
+    route_pass: Optional[str] = "unassigned"
+    route_leg_km: Optional[float] = None
+    assigned_vehicle_capacity_kg: Optional[int] = None
 
 
 class Driver(BaseModel):
@@ -53,7 +56,7 @@ class BidCreate(BaseModel):
 
 class Bid(BidCreate):
     id: str
-    status: Literal["Leading", "Open", "Accepted"]
+    status: Literal["Leading", "Open", "Accepted", "Rejected"]
 
 
 class ExtractionRequest(BaseModel):

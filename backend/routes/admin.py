@@ -5,6 +5,7 @@ from collections import defaultdict
 from database.db import supabase_client
 from services.clustering_service import build_clusters, next_slot_time, slot_label, IST
 from services.recommendation_service import generate_recommendation
+from services.sms_service import sms_service
 
 router = APIRouter()
 
@@ -14,6 +15,17 @@ def run_clustering():
     """Manually trigger clustering — useful for testing without waiting for slot."""
     try:
         clusters = build_clusters()
+
+        # SMS: notify all drivers about new clusters
+        if clusters:
+            cluster_ids = [c["id"] for c in clusters if c.get("id")]
+            if cluster_ids:
+                try:
+                    sms_result = sms_service.notify_drivers_cluster_created(cluster_ids)
+                    print(f"📱 Cluster SMS — sent: {sms_result.get('sms_sent', 0)}, failed: {sms_result.get('sms_failed', 0)}")
+                except Exception as sms_err:
+                    print(f"⚠️ Cluster SMS notification failed (non-critical): {sms_err}")
+
         return {
             "success": True,
             "clusters_formed": len(clusters),

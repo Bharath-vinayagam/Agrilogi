@@ -113,8 +113,63 @@ def _hardcoded_coords(address: str) -> tuple[float, float] | None:
     """Scan address for any known village name from context_service."""
     address_lower = address.lower()
     for key, entry in VILLAGE_DICTIONARY.items():
-        if key in address_lower:
+        if key in address_lower or key in address:
             return float(entry["lat"]), float(entry["lng"])
+    return None
+
+
+def _district_fallback(address: str) -> tuple[float, float] | None:
+    """
+    District-level fallback for major Tamil Nadu cities/districts.
+    Returns approximate center coordinates when exact address fails.
+    """
+    address_lower = address.lower()
+    
+    # Major Tamil Nadu districts with center coordinates
+    DISTRICT_COORDS = {
+        "chennai": (13.0827, 80.2707),
+        "kanchipuram": (12.8342, 79.7036),
+        "tiruvallur": (13.1436, 79.9098),
+        "chengalpattu": (12.6919, 79.9758),
+        "vellore": (12.9165, 79.1325),
+        "tiruvannamalai": (12.2253, 79.0747),
+        "villupuram": (11.9401, 79.4861),
+        "cuddalore": (11.7480, 79.7714),
+        "salem": (11.6643, 78.1460),
+        "namakkal": (11.2189, 78.1677),
+        "dharmapuri": (12.1211, 78.1582),
+        "krishnagiri": (12.5186, 78.2137),
+        "erode": (11.3410, 77.7172),
+        "coimbatore": (11.0168, 76.9558),
+        "tiruppur": (11.1085, 77.3411),
+        "nilgiris": (11.4102, 76.6950),
+        "karur": (10.9601, 78.0766),
+        "tiruchirappalli": (10.7905, 78.7047),
+        "trichy": (10.7905, 78.7047),
+        "perambalur": (11.2324, 78.8798),
+        "ariyalur": (11.1401, 79.0782),
+        "thanjavur": (10.7870, 79.1378),
+        "tiruvarur": (10.7729, 79.6345),
+        "nagapattinam": (10.7672, 79.8449),
+        "pudukkottai": (10.3833, 78.8000),
+        "madurai": (9.9252, 78.1198),
+        "theni": (10.0104, 77.4977),
+        "dindigul": (10.3673, 77.9803),
+        "ramanathapuram": (9.3639, 78.8377),
+        "virudhunagar": (9.5810, 77.9624),
+        "sivaganga": (9.8433, 78.4809),
+        "thoothukudi": (8.7642, 78.1348),
+        "tuticorin": (8.7642, 78.1348),
+        "tirunelveli": (8.7139, 77.7567),
+        "kanyakumari": (8.0883, 77.5385),
+        "tenkasi": (8.9600, 77.3152),
+    }
+    
+    for district, coords in DISTRICT_COORDS.items():
+        if district in address_lower:
+            print(f"   Using district-level coordinates for '{district}'")
+            return coords
+    
     return None
 
 
@@ -126,24 +181,28 @@ def geocode_address(address: str) -> tuple[float | None, float | None]:
       1. Ola Maps API (primary — best India accuracy)
       2. Nominatim simplified (strips street, retries with village+district+pincode)
       3. Hardcoded village dictionary
-      4. (None, None) — order excluded from spatial clustering
+      4. District-level fallback (major cities)
+      5. (None, None) — order excluded from spatial clustering
 
     Usage:
         lat, lng = geocode_address("12/4 Gandhi Street, Melma, Kanchipuram, Tamil Nadu 631501")
     """
     if not address or address.strip().lower() in ("unknown village", ""):
+        print(f"⚠️ Empty or unknown address provided")
         return None, None
+
+    print(f"🔍 Geocoding address: '{address}'")
 
     # 1. Ola Maps — full address
     coords = _ola_maps_geocode(address)
     if coords:
-        print(f"Geocoded '{address}' via Ola Maps: {coords}")
+        print(f"✅ Geocoded via Ola Maps: {coords}")
         return coords
 
     # 2a. Nominatim — full address
     coords = _nominatim_geocode(f"{address}, Tamil Nadu, India")
     if coords:
-        print(f"Geocoded '{address}' via Nominatim (full): {coords}")
+        print(f"✅ Geocoded via Nominatim (full): {coords}")
         return coords
 
     # 2b. Nominatim — simplified (last 3 comma parts, strips street number)
@@ -152,16 +211,22 @@ def geocode_address(address: str) -> tuple[float | None, float | None]:
         simplified = ", ".join(parts[-3:])
         coords = _nominatim_geocode(f"{simplified}, Tamil Nadu, India")
         if coords:
-            print(f"Geocoded '{address}' via Nominatim (simplified '{simplified}'): {coords}")
+            print(f"✅ Geocoded via Nominatim (simplified '{simplified}'): {coords}")
             return coords
 
     # 3. Hardcoded village dictionary
     coords = _hardcoded_coords(address)
     if coords:
-        print(f"Geocoded '{address}' via hardcoded dict: {coords}")
+        print(f"✅ Geocoded via hardcoded dict: {coords}")
         return coords
 
-    print(f"Could not geocode '{address}' — will be excluded from spatial clustering")
+    # 4. District-level fallback for major cities/districts
+    coords = _district_fallback(address)
+    if coords:
+        print(f"✅ Geocoded via district-level fallback: {coords}")
+        return coords
+
+    print(f"❌ Could not geocode '{address}' — will use fallback rate (₹9/kg)")
     return None, None
 
 

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Available Voice Inspector - Agrilogi</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #667eea;
+            color: white;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .female {
+            background: #ffe6f0;
+        }
+        .male {
+            background: #e6f3ff;
+        }
+        .test-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .test-btn:hover {
+            background: #45a049;
+        }
+        .filter-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .filter-btn {
+            margin: 5px;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+        }
+        .filter-btn:hover {
+            background: #5568d3;
+        }
+        .filter-btn.active {
+            background: #4CAF50;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔊 Available Voice Inspector</h1>
+        <p class="subtitle">Check which voices your browser supports for Agrilogi Voice Assistant</p>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="filter-section">
+            <strong>Filter by Language:</strong><br>
+            <button class="filter-btn active" onclick="filterVoices('all')">All Voices</button>
+            <button class="filter-btn" onclick="filterVoices('ta')">Tamil</button>
+            <button class="filter-btn" onclick="filterVoices('hi')">Hindi</button>
+            <button class="filter-btn" onclick="filterVoices('en')">English</button>
+            <button class="filter-btn" onclick="filterVoices('female')">Female Only</button>
+        </div>
+
+        <table id="voiceTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Voice Name</th>
+                    <th>Language</th>
+                    <th>Gender</th>
+                    <th>Local</th>
+                    <th>Test</th>
+                </tr>
+            </thead>
+            <tbody id="voiceList">
+                <tr><td colspan="6">Loading voices...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let allVoices = [];
+        let currentFilter = 'all';
+
+        function loadVoices() {
+            allVoices = speechSynthesis.getVoices();
+            if (allVoices.length === 0) {
+                setTimeout(loadVoices, 100);
+                return;
+            }
+            displayVoices();
+            updateStats();
+        }
+
+        function detectGender(voiceName) {
+            const name = voiceName.toLowerCase();
+            const femaleKeywords = ['female', 'woman', 'heera', 'lekha', 'kalpana', 'swara', 
+                                   'aditi', 'raveena', 'samantha', 'victoria', 'karen', 
+                                   'moira', 'tessa', 'fiona', 'veena'];
+            const maleKeywords = ['male', 'man', 'ravi', 'deepak', 'prabhat', 'daniel', 
+                                 'alex', 'fred', 'thomas'];
+            
+            if (femaleKeywords.some(keyword => name.includes(keyword))) return 'Female';
+            if (maleKeywords.some(keyword => name.includes(keyword))) return 'Male';
+            return 'Unknown';
+        }
+
+        function filterVoices(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            displayVoices();
+        }
+
+        function displayVoices() {
+            const tbody = document.getElementById('voiceList');
+            tbody.innerHTML = '';
+
+            let filtered = allVoices;
+            if (currentFilter !== 'all') {
+                if (currentFilter === 'female') {
+                    filtered = allVoices.filter(v => detectGender(v.name) === 'Female');
+                } else {
+                    filtered = allVoices.filter(v => v.lang.toLowerCase().startsWith(currentFilter));
+                }
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">No voices found for this filter</td></tr>';
+                return;
+            }
+
+            filtered.forEach((voice, index) => {
+                const gender = detectGender(voice.name);
+                const row = document.createElement('tr');
+                row.className = gender === 'Female' ? 'female' : gender === 'Male' ? 'male' : '';
+                
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><strong>${voice.name}</strong></td>
+                    <td>${voice.lang}</td>
+                    <td>${gender}</td>
+                    <td>${voice.localService ? '✅' : '☁️'}</td>
+                    <td><button class="test-btn" onclick="testVoice('${voice.name}', '${voice.lang}')">▶️ Test</button></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateStats() {
+            const tamil = allVoices.filter(v => v.lang.startsWith('ta'));
+            const hindi = allVoices.filter(v => v.lang.startsWith('hi'));
+            const english = allVoices.filter(v => v.lang.startsWith('en'));
+            const female = allVoices.filter(v => detectGender(v.name) === 'Female');
+
+            const statsDiv = document.getElementById('stats');
+            statsDiv.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-number">${allVoices.length}</div>
+                    <div class="stat-label">Total Voices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${tamil.length}</div>
+                    <div class="stat-label">Tamil Voices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${hindi.length}</div>
+                    <div class="stat-label">Hindi Voices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${english.length}</div>
+                    <div class="stat-label">English Voices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${female.length}</div>
+                    <div class="stat-label">Female Voices</div>
+                </div>
+            `;
+        }
+
+        function testVoice(voiceName, lang) {
+            const testTexts = {
+                'ta': 'Vanakkam. Ungalukku enna udhavi vendum?',
+                'hi': 'Namaste. Aapko kya chahiye?',
+                'en': 'Welcome to Agrilogi Voice Booking Helpline.'
+            };
+
+            const langPrefix = lang.substring(0, 2);
+            const text = testTexts[langPrefix] || testTexts['en'];
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voice = allVoices.find(v => v.name === voiceName);
+            
+            if (voice) {
+                utterance.voice = voice;
+                utterance.lang = voice.lang;
+            }
+            
+            utterance.rate = 0.75;
+            utterance.volume = 1;
+            utterance.pitch = 1.0;
+
+            speechSynthesis.cancel();
+            speechSynthesis.speak(utterance);
+
+            console.log(`Testing voice: ${voiceName} (${lang})`);
+        }
+
+        // Load voices when ready
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
+        loadVoices();
+    </script>
+</body>
+</html>

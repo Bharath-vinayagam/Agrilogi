@@ -4,16 +4,15 @@ import re
 from pydantic import BaseModel, Field
 
 try:
-    import google.generativeai as genai
+    from groq import Groq as _GroqClient
 except ImportError:
-    genai = None
+    _GroqClient = None
 
 from models.schemas import ExtractionRequest, ExtractionResult
 from services.context_service import normalize_crop, normalize_village
 from settings import settings
 
-if settings.gemini_api_key and genai:
-    genai.configure(api_key=settings.gemini_api_key)
+_groq_client = _GroqClient(api_key=settings.groq_api_key) if _GroqClient and settings.groq_api_key else None
 
 
 NAME_PATTERNS = [
@@ -80,8 +79,8 @@ class ExtractionSchema(BaseModel):
 
 
 def extract_from_transcript(payload: ExtractionRequest) -> ExtractionResult:
-    if settings.gemini_api_key and genai:
-        return _gemini_extraction(payload)
+    if _groq_client:
+        return _groq_extraction(payload)
     return _rule_based_extraction(payload)
 
 
@@ -120,21 +119,92 @@ def _extract_name(transcript: str) -> tuple[str, int]:
     return "Unknown Farmer", 45
 
 
+TAMIL_PHONETIC_WEIGHT_PATTERNS = [
+    # Speech-to-Text misrecognition for "naanooru kg" (நானூறு கேஜி):
+    (r"நான்\s*ஒரு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 400, 95),
+    (r"நானூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 400, 95),
+    (r"நாலு\s*நூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 400, 95),
+    (r"\bnaanooru\b", 400, 95),
+    (r"நூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 100, 95),
+    (r"இருநூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 200, 95),
+    (r"முந்நூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 300, 95),
+    (r"ஐந்நூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 500, 95),
+    (r"அறுநூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 600, 95),
+    (r"ஏழுநூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 700, 95),
+    (r"எண்ணூறு\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 800, 95),
+    (r"தொள்ளாயிரம்\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 900, 95),
+    (r"ஆயிரம்\s*(?:கேஜி|கிலோ|கிலோகிராம்|kg)?", 1000, 95),
+
+    # Hindi number words:
+    (r"चार\s*सौ\s*(?:किलो|केजी|kg)?", 400, 95),
+    (r"दो\s*सौ\s*(?:किलो|केजी|kg)?", 200, 95),
+    (r"तीन\s*सौ\s*(?:किलो|केजी|kg)?", 300, 95),
+    (r"पांच\s*सौ\s*(?:किलो|केजी|kg)?", 500, 95),
+    (r"पाँच\s*सौ\s*(?:किलो|केजी|kg)?", 500, 95),
+    (r"एक\s*सौ\s*(?:किलो|केजी|kg)?", 100, 95),
+    (r"एक\s*हज़ार\s*(?:किलो|केजी|kg)?", 1000, 95),
+]
+
+
 def _extract_weight(transcript: str) -> tuple[int, int]:
     normalized = transcript.lower().replace(",", " ")
+
+    # Check Tamil and Hindi phonetic and number word patterns first
+    for pattern, val, conf in TAMIL_PHONETIC_WEIGHT_PATTERNS:
+        if re.search(pattern, transcript, re.IGNORECASE):
+            return val, conf
+
     patterns = [
-        r"(\d{1,5})\s*(?:kg|kgs|kilo|kilos|kilogram|kilograms)",
-        r"(?:weight|weighs|have|has|paas|kitta|transport|send|load|crop)\D{0,30}(\d{1,5})",
-        r"(\d{1,3})\s*(?:bag|bags|sack|sacks)",
+        # Digits with English/Tamil/Hindi units
+        r"(\d{1,5})\s*(?:kg|kgs|kilo|kilos|kilogram|kilograms|கேஜி|கிலோ|கிலோகிராம்|किलो|केजी)",
+        # Sacks/bags (50kg per bag)
+        r"(\d{1,3})\s*(?:bag|bags|sack|sacks|மூட்டை|மூடை|முட்டை|बोरी|कट्टा|कट्टे)",
+        # Context patterns
+        r"(?:weight|weighs|have|has|paas|kitta|transport|send|load|crop|அளவு|எடை)\D{0,30}(\d{1,5})",
     ]
     for pattern in patterns:
         match = re.search(pattern, normalized)
         if match:
             value = int(match.group(1))
-            if "bag" in match.group(0) or "sack" in match.group(0):
+            if any(b in match.group(0) for b in ["bag", "sack", "மூட்டை", "மூடை", "முட்டை", "बोरी", "कट्टा"]):
                 value *= 50
             return value, 96
     return 0, 35
+
+
+def _extract_locations(transcript: str) -> tuple[str, str]:
+    """
+    Extracts origin pickup village and destination from transcript.
+    Supports English ('from X to Y'), Tamil ('X டு Y' or 'X லிருந்து Y'), and Hindi.
+    """
+    pickup = "Unknown Village"
+    dest = "Koyambedu Mandi"
+
+    # 1. Tamil 'X டு Y' or 'X to Y'
+    to_match = re.search(r"([^\s]+)\s+(?:டு|to|நோக்கி)\s+([^\s]+)", transcript, re.IGNORECASE)
+    if to_match:
+        w1, w2 = to_match.group(1), to_match.group(2)
+        v1 = normalize_village(w1)
+        v2 = normalize_village(w2)
+        if v1 != "Unknown Village":
+            pickup = v1
+        if v2 != "Unknown Village":
+            dest = "Koyambedu Mandi" if v2 in ["Chennai", "Koyambedu Mandi"] else v2
+
+    # 2. 'X ல இருந்து Y' or 'from X to Y'
+    from_match = re.search(r"(?:from|இருந்து|லிருந்து|से)\s+([^\s]+)", transcript, re.IGNORECASE)
+    if from_match and pickup == "Unknown Village":
+        v = normalize_village(from_match.group(1))
+        if v != "Unknown Village":
+            pickup = v
+
+    # Fallback: scan for any known village
+    if pickup == "Unknown Village":
+        candidate = normalize_village(transcript)
+        if candidate != "Unknown Village" and candidate != "Chennai":
+            pickup = candidate
+
+    return pickup, dest
 
 
 def _confidence_for(value: str, unknown: str, high: int = 92) -> int:
@@ -144,7 +214,7 @@ def _confidence_for(value: str, unknown: str, high: int = 92) -> int:
 def _rule_based_extraction(payload: ExtractionRequest) -> ExtractionResult:
     transcript = _normalize_text(payload.transcript)
     farmer_name, farmer_confidence = _extract_name(transcript)
-    village = normalize_village(transcript)
+    village, destination = _extract_locations(transcript)
     crop = normalize_crop(transcript)
     weight, weight_confidence = _extract_weight(transcript)
 
@@ -153,6 +223,9 @@ def _rule_based_extraction(payload: ExtractionRequest) -> ExtractionResult:
         extracted={
             "farmer_name": farmer_name,
             "village": village,
+            "source_village": village,
+            "destination": destination,
+            "destination_village": destination,
             "crop": crop,
             "weight": weight,
         },
@@ -165,28 +238,30 @@ def _rule_based_extraction(payload: ExtractionRequest) -> ExtractionResult:
     )
 
 
-def _gemini_extraction(payload: ExtractionRequest) -> ExtractionResult:
+def _groq_extraction(payload: ExtractionRequest) -> ExtractionResult:
     try:
-        model = genai.GenerativeModel(
-            "gemini-2.5-flash",
-            system_instruction=(
-                "Extract farmer logistics booking details from rural Tamil, Hindi, "
-                "or English transcripts. Return only structured JSON."
-            ),
+        response = _groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract farmer logistics booking details from rural Tamil, Hindi, "
+                        "or English transcripts. Return only a JSON object with these fields: "
+                        "farmer_name (string), crop (string), weight (integer kg), village (string), "
+                        "confidence (object with farmer_name, village, crop, weight as integers 0-100). "
+                        "Normalize village and crop spellings."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Transcript: {payload.transcript}",
+                },
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
         )
-        response = model.generate_content(
-            (
-                "Extract farmer_name, village, crop, weight in kg, and confidence scores. "
-                "Normalize village and crop spellings. Transcript: "
-                f"{payload.transcript}"
-            ),
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=ExtractionSchema,
-                temperature=0.1,
-            ),
-        )
-        data = json.loads(response.text)
+        data = json.loads(response.choices[0].message.content)
         confidence = data.get("confidence", {})
         return ExtractionResult(
             transcript=payload.transcript,
@@ -204,5 +279,5 @@ def _gemini_extraction(payload: ExtractionRequest) -> ExtractionResult:
             },
         )
     except Exception as exc:
-        print(f"Gemini extraction failed: {exc}. Falling back to rule-based.")
+        print(f"Groq extraction failed: {exc}. Falling back to rule-based.")
         return _rule_based_extraction(payload)

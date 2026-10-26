@@ -142,8 +142,30 @@ async def send_trip_update_notification(request: TripUpdateSMSRequest):
         return SMSResponse(success=False, message=str(e))
 
 
-@router.post("/custom", response_model=SMSResponse)
-async def send_custom_notification(request: CustomSMSRequest):
+@router.get("/notifications/{phone}")
+async def get_notifications_for_phone(phone: str):
+    """Get SMS notifications for a specific phone number"""
+    try:
+        from services.sms_service import sms_service
+        from database.db import supabase_client
+        if not supabase_client:
+            return []
+        # Format phone to match how it's stored
+        formatted = sms_service._format_phone(phone)
+        res = supabase_client.table("notifications")\
+            .select("*")\
+            .eq("phone", formatted)\
+            .eq("channel", "sms")\
+            .order("created_at", desc=True)\
+            .limit(20)\
+            .execute()
+        return res.data or []
+    except Exception as e:
+        print(f"Error fetching notifications: {e}")
+        return []
+
+
+
     """Send custom SMS (for testing)"""
     try:
         from services.sms_service import sms_service

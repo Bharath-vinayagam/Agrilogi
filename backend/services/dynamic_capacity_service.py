@@ -43,17 +43,24 @@ def estimate_delivery_time(pickup_date: str, pickup_slot: str) -> datetime:
         return datetime.now(IST).replace(hour=18, minute=0, second=0, microsecond=0)
 
 
+def _get_client():
+    """Return supabase_client, re-importing to pick up any reconnection."""
+    from database.db import supabase_client as _client
+    return _client
+
+
 def get_driver_schedule(driver_name: str) -> List[Dict]:
     """
     Get driver's complete schedule: all accepted orders sorted by time.
     Returns list of orders with pickup/delivery times and weights.
     """
-    if not supabase_client:
+    client = _get_client()
+    if not client:
         return []
     
     try:
         # Get all accepted bids (won orders)
-        response = supabase_client.table("bids").select("order_id").eq("driver_name", driver_name).eq("status", "Accepted").eq("bid_type", "order").execute()
+        response = client.table("bids").select("order_id").eq("driver_name", driver_name).eq("status", "Accepted").eq("bid_type", "order").execute()
         
         if not response.data:
             return []
@@ -61,7 +68,7 @@ def get_driver_schedule(driver_name: str) -> List[Dict]:
         order_ids = [bid["order_id"] for bid in response.data]
         
         # Get order details
-        orders_response = supabase_client.table("orders").select("*").in_("id", order_ids).execute()
+        orders_response = client.table("orders").select("*").in_("id", order_ids).execute()
         
         if not orders_response.data:
             return []
@@ -120,7 +127,8 @@ def calculate_capacity_at_time(driver_name: str, target_time: datetime, vehicle_
         return {
             "available_capacity": vehicle_capacity,
             "current_load": 0,
-            "orders_onboard": []
+            "orders_onboard": [],
+            "num_orders_onboard": 0
         }
     
     current_load = 0
