@@ -1171,46 +1171,31 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ---
 
-## 👥 Contributors
+## 👨‍💻 Developer
 
-This project was developed by a team of 3 talented developers:
+<div align="center">
+  <a href="https://github.com/Bharath-vinayagam">
+    <img src="https://github.com/Bharath-vinayagam.png" width="150px;" alt="Bharath Vinayagam"/>
+  </a>
+  <br />
+  <h3>Bharath Vinayagam</h3>
+  <p><i>Full Stack Developer</i></p>
+  
+  [![GitHub](https://img.shields.io/badge/GitHub-Bharath--vinayagam-181717?style=for-the-badge&logo=github)](https://github.com/Bharath-vinayagam)
+</div>
 
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/Bharath-vinayagam">
-        <img src="https://github.com/Bharath-vinayagam.png" width="100px;" alt=""/>
-        <br />
-        <sub><b>Bharath Vinayagam</b></sub>
-      </a>
-      <br />
-      <sub>Full Stack Developer</sub>
-    </td>
-    <td align="center">
-      <a href="https://github.com/teammate1">
-        <img src="https://avatars.githubusercontent.com/u/0?v=4" width="100px;" alt=""/>
-        <br />
-        <sub><b>Teammate 1</b></sub>
-      </a>
-      <br />
-      <sub>Backend Developer</sub>
-    </td>
-    <td align="center">
-      <a href="https://github.com/teammate2">
-        <img src="https://avatars.githubusercontent.com/u/0?v=4" width="100px;" alt=""/>
-        <br />
-        <sub><b>Teammate 2</b></sub>
-      </a>
-      <br />
-      <sub>Frontend Developer</sub>
-    </td>
-  </tr>
-</table>
-
-### Team Contributions
-- **Bharath Vinayagam**: Project architecture, system integration, documentation
-- **Teammate 1**: Backend API development, ML algorithms, database design
-- **Teammate 2**: Frontend UI/UX, dashboard components, user experience
+### 🎯 Solo Development
+This entire project was **independently developed** by Bharath Vinayagam, including:
+- 🏗️ **System Architecture**: Complete platform design and scalability planning
+- 🐍 **Backend Development**: FastAPI, database design, ML algorithm implementation
+- ⚛️ **Frontend Development**: Next.js, React components, responsive UI/UX
+- 🤖 **AI/ML Integration**: Groq API, DBSCAN clustering, OR-Tools optimization
+- 🔐 **Authentication System**: OTP verification, secure registration, document validation
+- 📱 **SMS Integration**: Twilio notifications, multilingual messaging
+- 📊 **Cost Algorithms**: Fair allocation formulas, pricing calculations
+- 🗺️ **Maps Integration**: TomTom/OLA APIs, route optimization
+- 📚 **Complete Documentation**: README, setup guides, API reference
+- 🧪 **Testing**: Test cases, validation, pilot deployment
 
 *Built with ❤️ for Indian farmers*
 
